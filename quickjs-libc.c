@@ -1,8 +1,8 @@
 /*
  * QuickJS C library
  * 
- * Copyright (c) 2017-2020 Fabrice Bellard
- * Copyright (c) 2017-2020 Charlie Gordon
+ * Copyright (c) 2017-2021 Fabrice Bellard
+ * Copyright (c) 2017-2021 Charlie Gordon
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -43,6 +43,7 @@
   #include <sys/stat.h>
   #include <sys/utime.h>
   #include "win/dirent.h"
+  #include <direct.h>
   #ifndef PATH_MAX
     #define PATH_MAX MAX_PATH
   #endif
@@ -67,12 +68,12 @@ typedef sig_t sighandler_t;
 
 #endif
 
-#if !defined(_WIN32)
-/* enable the os.Worker API. IT relies on POSIX threads */
 #define USE_WORKER
-#endif
 
-#ifdef USE_WORKER
+#ifdef _WIN32
+#include "win/pthread.h"
+#pragma comment(lib,"Ws2_32.lib")
+#else
 #include <pthread.h>
 #include <stdatomic.h>
 #endif
@@ -102,6 +103,7 @@ typedef struct {
     BOOL has_object;
     int64_t timeout;
     JSValue func;
+    JSValue thisObj;
 } JSOSTimer;
 
 typedef struct {
@@ -119,8 +121,12 @@ typedef struct {
     pthread_mutex_t mutex;
 #endif
     struct list_head msg_queue; /* list of JSWorkerMessage.link */
+#ifdef _WIN32
+    HANDLE hSemaphore;
+#else
     int read_fd;
     int write_fd;
+#endif
 } JSWorkerMessagePipe;
 
 typedef struct {
@@ -459,17 +465,49 @@ static JSValue js_std_loadFile(JSContext *ctx, JSValueConst this_val,
     return ret;
 }
 
-typedef JSModuleDef *(JSInitModuleFunc)(JSContext *ctx,
+typedef JSModuleDef * (JSInitModuleFunc)(JSContext *ctx,
                                         const char *module_name);
 
+typedef void (JSUninitModuleFunc)(JSContext* ctx);
+
+void JS_SetModuleHandle(JSModuleDef* m, void* so_handle);
 
 #if defined(_WIN32)
 static JSModuleDef *js_module_loader_so(JSContext *ctx,
                                         const char *module_name)
 {
-    JS_ThrowReferenceError(ctx, "shared library modules are not supported yet");
-              return NULL;
+    HMODULE hd = LoadLibraryA(module_name);
+    if (hd == NULL) {
+        JS_ThrowReferenceError(ctx, "load shared library modules failed");
+        return NULL;
+    }
+    char szName[MAX_PATH];
+    _splitpath(module_name, NULL, NULL, szName, NULL);
+    JSInitModuleFunc* init=NULL;
+    JSModuleDef* m = NULL;
+    init = (JSInitModuleFunc*)GetProcAddress(hd, "js_init_module");
+    if (init) {
+        m = init(ctx, szName);
+    }
+    if(!m){
+        FreeLibrary(hd);
+        JS_ThrowReferenceError(ctx, "js_init_module failed");
+        return NULL;
+    }
+    JS_SetModuleHandle(m,(void*)hd);
+    return m;
 }
+
+static void js_module_unload_so(JSContext* ctx, void *so_handle)
+{
+    JSUninitModuleFunc* uninit;
+    if (so_handle != NULL) {
+        uninit = (JSUninitModuleFunc*)GetProcAddress((HMODULE)so_handle, "js_uninit_module");
+        if (uninit) uninit(ctx);
+        FreeLibrary((HMODULE)so_handle);
+    }
+}
+
 #else
 static JSModuleDef *js_module_loader_so(JSContext *ctx,
                                         const char *module_name)
@@ -517,7 +555,18 @@ static JSModuleDef *js_module_loader_so(JSContext *ctx,
             dlclose(hd);
         return NULL;
     }
+    JS_SetModuleHandle(m, hd);
     return m;
+}
+
+static void js_module_unload_so(JSContext* ctx, void* so_handle)
+{
+    JSUninitModuleFunc* uninit;
+    if (so_handle != NULL) {
+        uninit = dlsym(m->so_handle, "js_uninit_module");
+        if (uninit) uninit(ctx);
+        dlclose(m->so_handle);
+    }
 }
 #endif /* !_WIN32 */
 
@@ -579,7 +628,7 @@ JSModuleDef *js_module_loader(JSContext *ctx,
 {
     JSModuleDef *m;
 
-    if (has_suffix(module_name, ".so")) {
+    if (has_suffix(module_name, ".so") || has_suffix(module_name, ".dll")) {
         m = js_module_loader_so(ctx, module_name);
     } else {
         size_t buf_len;
@@ -606,6 +655,11 @@ JSModuleDef *js_module_loader(JSContext *ctx,
         JS_FreeValue(ctx, func_val);
     }
     return m;
+}
+
+void js_module_unloader(JSContext* ctx, void* so_handler)
+{
+    js_module_unload_so(ctx, so_handler);
 }
 
 static JSValue js_std_exit(JSContext *ctx, JSValueConst this_val,
@@ -1981,6 +2035,7 @@ static int64_t get_time_ms(void)
     return (uint64_t)ts.tv_sec * 1000 + (ts.tv_nsec / 1000000);
 }
 #else
+int gettimeofday(struct timeval* tp, struct timezone* tzp);
 /* more portable, but does not work if the date is updated */
 static int64_t get_time_ms(void)
 {
@@ -2022,6 +2077,7 @@ static void js_os_timer_mark(JSRuntime *rt, JSValueConst val,
     JSOSTimer *th = JS_GetOpaque(val, js_os_timer_class_id);
     if (th) {
         JS_MarkValue(rt, th->func, mark_func);
+        JS_MarkValue(rt, th->thisObj, mark_func);
     }
 }
 
@@ -2031,7 +2087,7 @@ static JSValue js_os_setTimeout(JSContext *ctx, JSValueConst this_val,
     JSRuntime *rt = JS_GetRuntime(ctx);
     JSThreadState *ts = JS_GetRuntimeOpaque(rt);
     int64_t delay;
-    JSValueConst func;
+    JSValueConst func,thisObj= JS_UNDEFINED;
     JSOSTimer *th;
     JSValue obj;
 
@@ -2040,6 +2096,9 @@ static JSValue js_os_setTimeout(JSContext *ctx, JSValueConst this_val,
         return JS_ThrowTypeError(ctx, "not a function");
     if (JS_ToInt64(ctx, &delay, argv[1]))
         return JS_EXCEPTION;
+    if (argc > 2 && JS_IsObject(argv[2])) {
+        thisObj = argv[2];
+    }
     obj = JS_NewObjectClass(ctx, js_os_timer_class_id);
     if (JS_IsException(obj))
         return obj;
@@ -2051,6 +2110,7 @@ static JSValue js_os_setTimeout(JSContext *ctx, JSValueConst this_val,
     th->has_object = TRUE;
     th->timeout = get_time_ms() + delay;
     th->func = JS_DupValue(ctx, func);
+    th->thisObj = JS_DupValue(ctx, thisObj);
     list_add_tail(&th->link, &ts->os_timers);
     JS_SetOpaque(obj, th);
     return obj;
@@ -2063,6 +2123,8 @@ static JSValue js_os_clearTimeout(JSContext *ctx, JSValueConst this_val,
     if (!th)
         return JS_EXCEPTION;
     unlink_timer(JS_GetRuntime(ctx), th);
+    JS_FreeValue(ctx,th->thisObj);
+    th->thisObj = JS_UNDEFINED;
     return JS_UNDEFINED;
 }
 
@@ -2085,82 +2147,60 @@ static void call_handler(JSContext *ctx, JSValueConst func)
     JS_FreeValue(ctx, ret);
 }
 
-#if defined(_WIN32)
-
-static int js_os_poll(JSContext *ctx)
+static void call_handler2(JSContext* ctx, JSValueConst func, JSValueConst thisObj)
 {
-    JSRuntime *rt = JS_GetRuntime(ctx);
-    JSThreadState *ts = JS_GetRuntimeOpaque(rt);
-    int min_delay, console_fd;
+    JSValue ret, func1, thisObj1;
+    /* 'func' might be destroyed when calling itself (if it frees the
+       handler), so must take extra care */
+    func1 = JS_DupValue(ctx, func);
+    thisObj1 = JS_DupValue(ctx, thisObj);
+    ret = JS_Call(ctx, func1, thisObj1, 0, NULL);
+    JS_FreeValue(ctx, func1);
+    JS_FreeValue(ctx, thisObj1);
+
+    if (JS_IsException(ret))
+        js_std_dump_error(ctx);
+    JS_FreeValue(ctx, ret);
+}
+
+void JS_ExecuteTimer(JSContext* ctx) {
+    JSRuntime* rt = JS_GetRuntime(ctx);
+    JSThreadState* ts = JS_GetRuntimeOpaque(rt);
     int64_t cur_time, delay;
-    JSOSRWHandler *rh;
-    struct list_head *el;
-    
+    JSOSRWHandler* rh;
+    struct list_head* el;
+
     /* XXX: handle signals if useful */
 
-    if (list_empty(&ts->os_rw_handlers) && list_empty(&ts->os_timers))
-        return -1; /* no more events */
-    
-    /* XXX: only timers and basic console input are supported */
-    if (!list_empty(&ts->os_timers)) {
+    if (list_empty(&ts->os_timers))
+        return ; /* no more timer */
+
+    /* XXX: only timers are supported */
+    {
         cur_time = get_time_ms();
-        min_delay = 10000;
+    time_start2:
         list_for_each(el, &ts->os_timers) {
-            JSOSTimer *th = list_entry(el, JSOSTimer, link);
+            JSOSTimer* th = list_entry(el, JSOSTimer, link);
             delay = th->timeout - cur_time;
             if (delay <= 0) {
-                JSValue func;
+                JSValue func,thisObj;
                 /* the timer expired */
                 func = th->func;
+                thisObj = th->thisObj;
                 th->func = JS_UNDEFINED;
+                th->thisObj = JS_UNDEFINED;
                 unlink_timer(rt, th);
                 if (!th->has_object)
                     free_timer(rt, th);
-                call_handler(ctx, func);
+                call_handler2(ctx, func, thisObj);
                 JS_FreeValue(ctx, func);
-                return 0;
-            } else if (delay < min_delay) {
-                min_delay = delay;
+                if(JS_IsObject(thisObj))
+                    JS_FreeValue(ctx, thisObj);
+                goto time_start2;
             }
         }
-    } else {
-        min_delay = -1;
     }
-
-    console_fd = -1;
-    list_for_each(el, &ts->os_rw_handlers) {
-        rh = list_entry(el, JSOSRWHandler, link);
-        if (rh->fd == 0 && !JS_IsNull(rh->rw_func[0])) {
-            console_fd = rh->fd;
-            break;
-        }
-    }
-
-    if (console_fd >= 0) {
-        DWORD ti, ret;
-        HANDLE handle;
-        if (min_delay == -1)
-            ti = INFINITE;
-        else
-            ti = min_delay;
-        handle = (HANDLE)_get_osfhandle(console_fd);
-        ret = WaitForSingleObject(handle, ti);
-        if (ret == WAIT_OBJECT_0) {
-            list_for_each(el, &ts->os_rw_handlers) {
-                rh = list_entry(el, JSOSRWHandler, link);
-                if (rh->fd == console_fd && !JS_IsNull(rh->rw_func[0])) {
-                    call_handler(ctx, rh->rw_func[0]);
-                    /* must stop because the list may have been modified */
-                    break;
-                }
-            }
-        }
-    } else {
-        Sleep(min_delay);
-    }
-    return 0;
 }
-#else
 
 #ifdef USE_WORKER
 
@@ -2185,6 +2225,8 @@ static int handle_posted_message(JSRuntime *rt, JSContext *ctx,
         list_del(&msg->link);
 
         if (list_empty(&ps->msg_queue)) {
+#ifndef _WIN32
+
             uint8_t buf[16];
             int ret;
             for(;;) {
@@ -2194,6 +2236,7 @@ static int handle_posted_message(JSRuntime *rt, JSContext *ctx,
                 if (errno != EAGAIN && errno != EINTR)
                     break;
             }
+#endif
         }
 
         pthread_mutex_unlock(&ps->mutex);
@@ -2239,6 +2282,117 @@ static int handle_posted_message(JSRuntime *rt, JSContext *ctx,
 }
 #endif
 
+#ifdef _WIN32
+static int js_os_poll(JSContext* ctx)
+{
+    JSRuntime* rt = JS_GetRuntime(ctx);
+    JSThreadState* ts = JS_GetRuntimeOpaque(rt);
+    int ret, min_delay=INFINITE;
+    int64_t cur_time, delay;
+    HANDLE evts[64];
+    JSOSRWHandler* rh;
+    struct list_head* el;
+    int osrw_cnt = 0;
+    int msg_cnt = 0;
+
+    /* only check signals in the main thread */
+    if (!ts->recv_pipe &&
+        unlikely(os_pending_signals != 0)) {
+        JSOSSignalHandler* sh;
+        uint64_t mask;
+
+        list_for_each(el, &ts->os_signal_handlers) {
+            sh = list_entry(el, JSOSSignalHandler, link);
+            mask = (uint64_t)1 << sh->sig_num;
+            if (os_pending_signals & mask) {
+                os_pending_signals &= ~mask;
+                call_handler(ctx, sh->func);
+                return 0;
+            }
+        }
+    }
+
+    if (list_empty(&ts->os_rw_handlers) && list_empty(&ts->os_timers) &&
+        list_empty(&ts->port_list))
+        return -1; /* no more events */
+
+    if (!list_empty(&ts->os_timers)) {
+        cur_time = get_time_ms();
+        min_delay = 10000;
+        list_for_each(el, &ts->os_timers) {
+            JSOSTimer* th = list_entry(el, JSOSTimer, link);
+            delay = th->timeout - cur_time;
+            if (delay <= 0) {
+                JSValue func,thisObj;
+                /* the timer expired */
+                func = th->func;
+                thisObj = th->thisObj;
+                th->func = JS_UNDEFINED;
+                th->thisObj = JS_UNDEFINED;
+                unlink_timer(rt, th);
+                if (!th->has_object)
+                    free_timer(rt, th);
+                call_handler2(ctx, func,thisObj);
+                JS_FreeValue(ctx, func);
+                JS_FreeValue(ctx, thisObj);
+                return 0;
+            }
+            else if (delay < min_delay) {
+                min_delay = delay;
+            }
+        }
+    }
+
+    memset(evts, 0, sizeof(evts));
+    list_for_each(el, &ts->os_rw_handlers) {
+        if (osrw_cnt > 64)
+            break;
+        rh = list_entry(el, JSOSRWHandler, link);
+        evts[osrw_cnt++] = (HANDLE)_get_osfhandle(rh->fd);
+    }
+
+    list_for_each(el, &ts->port_list) {
+        JSWorkerMessageHandler* port = list_entry(el, JSWorkerMessageHandler, link);
+        if (!JS_IsNull(port->on_message_func)) {
+            JSWorkerMessagePipe* ps = port->recv_pipe;
+            if (osrw_cnt + msg_cnt > 64)
+                break;
+            evts[osrw_cnt + msg_cnt++] = ps->hSemaphore;
+        }
+    }
+
+    ret = WaitForMultipleObjects(osrw_cnt+ msg_cnt, evts, FALSE, min_delay);
+    if (ret >= WAIT_OBJECT_0 && ret < WAIT_OBJECT_0+ osrw_cnt+ msg_cnt) {
+        int idx = 0;
+        list_for_each(el, &ts->os_rw_handlers) {
+            rh = list_entry(el, JSOSRWHandler, link);
+            if (idx == ret- WAIT_OBJECT_0 && !JS_IsNull(rh->rw_func[0])) {
+                call_handler(ctx, rh->rw_func[0]);
+                /* must stop because the list may have been modified */
+                goto done;
+            }
+            if (idx == ret - WAIT_OBJECT_0 && !JS_IsNull(rh->rw_func[1]) ) {
+                call_handler(ctx, rh->rw_func[1]);
+                /* must stop because the list may have been modified */
+                goto done;
+            }
+            idx++;
+        }
+        idx = 0;
+        list_for_each(el, &ts->port_list) {
+            JSWorkerMessageHandler* port = list_entry(el, JSWorkerMessageHandler, link);
+            if (idx == (ret - WAIT_OBJECT_0 - osrw_cnt) && !JS_IsNull(port->on_message_func)) {
+                JSWorkerMessagePipe* ps = port->recv_pipe;
+                handle_posted_message(rt, ctx, port);
+                goto done;
+            }
+            idx++;
+        }
+    }
+done:
+    return 0;
+}
+#else
 static int js_os_poll(JSContext *ctx)
 {
     JSRuntime *rt = JS_GetRuntime(ctx);
@@ -2278,15 +2432,18 @@ static int js_os_poll(JSContext *ctx)
             JSOSTimer *th = list_entry(el, JSOSTimer, link);
             delay = th->timeout - cur_time;
             if (delay <= 0) {
-                JSValue func;
+                JSValue func,thisObj;
                 /* the timer expired */
                 func = th->func;
+                thisObj = th->thisObj;
                 th->func = JS_UNDEFINED;
+                th->thisObj = JS_UNDEFINED;
                 unlink_timer(rt, th);
                 if (!th->has_object)
                     free_timer(rt, th);
-                call_handler(ctx, func);
+                call_handler2(ctx, func,thisObj);
                 JS_FreeValue(ctx, func);
+                JS_FreeValue(ctx, thisObj);
                 return 0;
             } else if (delay < min_delay) {
                 min_delay = delay;
@@ -2319,7 +2476,6 @@ static int js_os_poll(JSContext *ctx)
             FD_SET(ps->read_fd, &rfds);
         }
     }
-
     ret = select(fd_max + 1, &rfds, &wfds, NULL, tvp);
     if (ret > 0) {
         list_for_each(el, &ts->os_rw_handlers) {
@@ -3112,22 +3268,6 @@ static JSValue js_os_kill(JSContext *ctx, JSValueConst this_val,
     return JS_NewInt32(ctx, ret);
 }
 
-/* sleep(delay_ms) */
-/*static JSValue js_os_sleep(JSContext *ctx, JSValueConst this_val,
-                          int argc, JSValueConst *argv)
-{
-    int64_t delay;
-    struct timespec ts;
-    int ret;
-    
-    if (JS_ToInt64(ctx, &delay, argv[0]))
-        return JS_EXCEPTION;
-    ts.tv_sec = delay / 1000;
-    ts.tv_nsec = (delay % 1000) * 1000000;
-    ret = js_get_errno(nanosleep(&ts, NULL));
-    return JS_NewInt32(ctx, ret);
-}*/
-
 /* dup(fd) */
 static JSValue js_os_dup(JSContext *ctx, JSValueConst this_val,
                          int argc, JSValueConst *argv)
@@ -3180,9 +3320,20 @@ typedef struct {
 static JSClassID js_worker_class_id;
 static JSContext *(*js_worker_new_context_func)(JSRuntime *rt);
 
-static int atomic_add_int(int *ptr, int v)
-{
-    return atomic_fetch_add((_Atomic(uint32_t) *)ptr, v) + v;
+static int atomic_inc(int* ptr) {
+#ifdef _WIN32
+    return InterlockedIncrement(ptr);
+#else
+    return atomic_fetch_add((_Atomic(uint32_t)*)ptr, 1) + 1;
+#endif
+}
+
+static int atomic_dec(int* ptr) {
+#ifdef _WIN32
+    return InterlockedDecrement(ptr);
+#else
+    return atomic_fetch_add((_Atomic(uint32_t)*)ptr, -1) - 1;
+#endif
 }
 
 /* shared array buffer allocator */
@@ -3201,7 +3352,7 @@ static void js_sab_free(void *opaque, void *ptr)
     JSSABHeader *sab;
     int ref_count;
     sab = (JSSABHeader *)((uint8_t *)ptr - sizeof(JSSABHeader));
-    ref_count = atomic_add_int(&sab->ref_count, -1);
+    ref_count = atomic_dec(&sab->ref_count);
     assert(ref_count >= 0);
     if (ref_count == 0) {
         free(sab);
@@ -3212,34 +3363,45 @@ static void js_sab_dup(void *opaque, void *ptr)
 {
     JSSABHeader *sab;
     sab = (JSSABHeader *)((uint8_t *)ptr - sizeof(JSSABHeader));
-    atomic_add_int(&sab->ref_count, 1);
+    atomic_inc(&sab->ref_count);
 }
+
+#ifdef _WIN32
+#define pipe(x) _pipe(x,2048,_O_BINARY)
+#endif
 
 static JSWorkerMessagePipe *js_new_message_pipe(void)
 {
     JSWorkerMessagePipe *ps;
+#ifndef _WIN32
     int pipe_fds[2];
     
     if (pipe(pipe_fds) < 0)
         return NULL;
-
+#endif
     ps = malloc(sizeof(*ps));
+#ifndef _WIN32
     if (!ps) {
         close(pipe_fds[0]);
         close(pipe_fds[1]);
         return NULL;
     }
+#endif
     ps->ref_count = 1;
     init_list_head(&ps->msg_queue);
     pthread_mutex_init(&ps->mutex, NULL);
+#ifdef _WIN32
+    ps->hSemaphore = CreateSemaphore(NULL, 0, 64, NULL);
+#else
     ps->read_fd = pipe_fds[0];
     ps->write_fd = pipe_fds[1];
+#endif
     return ps;
 }
 
 static JSWorkerMessagePipe *js_dup_message_pipe(JSWorkerMessagePipe *ps)
 {
-    atomic_add_int(&ps->ref_count, 1);
+    atomic_inc(&ps->ref_count);
     return ps;
 }
 
@@ -3264,7 +3426,7 @@ static void js_free_message_pipe(JSWorkerMessagePipe *ps)
     if (!ps)
         return;
     
-    ref_count = atomic_add_int(&ps->ref_count, -1);
+    ref_count = atomic_dec(&ps->ref_count);
     assert(ref_count >= 0);
     if (ref_count == 0) {
         list_for_each_safe(el, el1, &ps->msg_queue) {
@@ -3272,8 +3434,12 @@ static void js_free_message_pipe(JSWorkerMessagePipe *ps)
             js_free_message(msg);
         }
         pthread_mutex_destroy(&ps->mutex);
+#ifdef _WIN32
+        CloseHandle(ps->hSemaphore);
+#else
         close(ps->read_fd);
         close(ps->write_fd);
+#endif
         free(ps);
     }
 }
@@ -3318,7 +3484,7 @@ static void *worker_func(void *opaque)
     }        
     js_std_init_handlers(rt);
 
-    JS_SetModuleLoaderFunc(rt, NULL, js_module_loader, NULL);
+    JS_SetModuleLoaderFunc(rt, NULL, js_module_loader, js_module_unloader, NULL);
 
     /* set the pipe to communicate with the parent */
     ts = JS_GetRuntimeOpaque(rt);
@@ -3512,6 +3678,9 @@ static JSValue js_worker_postMessage(JSContext *ctx, JSValueConst this_val,
     ps = worker->send_pipe;
     pthread_mutex_lock(&ps->mutex);
     /* indicate that data is present */
+#ifdef _WIN32
+    ReleaseSemaphore(ps->hSemaphore, 1, NULL);
+#else
     if (list_empty(&ps->msg_queue)) {
         uint8_t ch = '\0';
         int ret;
@@ -3523,6 +3692,8 @@ static JSValue js_worker_postMessage(JSContext *ctx, JSValueConst this_val,
                 break;
         }
     }
+#endif
+
     list_add_tail(&msg->link, &ps->msg_queue);
     pthread_mutex_unlock(&ps->mutex);
     return JS_UNDEFINED;
@@ -3910,6 +4081,121 @@ void js_std_promise_rejection_tracker(JSContext *ctx, JSValueConst promise,
     }
 }
 
+#ifdef _WIN32
+
+int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length,int *rwsize,int *msgSize,uint32_t *waitTime)
+{
+    JSRuntime* rt = JS_GetRuntime(ctx);
+    JSThreadState* ts = JS_GetRuntimeOpaque(rt);
+    JSOSRWHandler* rh;
+    struct list_head* el;
+    int osrw_cnt = 0;
+    int msg_cnt = 0;
+    uint32_t min_delay = INFINITE;
+
+    JSContext* ctx1 = NULL;
+    int err = 0;
+    JS_ExecutePendingJob(JS_GetRuntime(ctx), &ctx1);
+    if (err <= 0) {
+        if (err < 0) {
+            js_std_dump_error(ctx1);
+        }
+    }
+
+    if (!list_empty(&ts->os_timers)) {
+        int64_t cur_time = get_time_ms();
+time_start:
+        list_for_each(el, &ts->os_timers) {
+            JSOSTimer* th = list_entry(el, JSOSTimer, link);
+            int64_t delay = (int64_t)(th->timeout - cur_time);
+            if (delay <= 0) {
+                JSValue func,thisObj;
+                /* the timer expired */
+                func = th->func;
+                thisObj = th->thisObj;
+                th->func = JS_UNDEFINED;
+                th->thisObj = JS_UNDEFINED;
+                unlink_timer(rt, th);
+                if (!th->has_object)
+                    free_timer(rt, th);
+                call_handler2(ctx, func, thisObj);
+                JS_FreeValue(ctx, func);
+                if(JS_IsObject(thisObj))
+                    JS_FreeValue(ctx, thisObj);
+                goto time_start;
+            }
+            else if (delay < min_delay || min_delay==INFINITE) {
+                min_delay = (uint32_t)delay;
+            }
+        }
+    }
+    if (waitTime) {
+        *waitTime = min_delay;
+    }
+    if (list_empty(&ts->os_rw_handlers) && list_empty(&ts->port_list))
+        return 0; /* no more events */
+
+    memset(handles, 0, sizeof(HANDLE)*length);
+    list_for_each(el, &ts->os_rw_handlers) {
+        if (osrw_cnt > length)
+            break;
+        rh = list_entry(el, JSOSRWHandler, link);
+        handles[osrw_cnt++] = (HANDLE)_get_osfhandle(rh->fd);
+    }
+
+    list_for_each(el, &ts->port_list) {
+        JSWorkerMessageHandler* port = list_entry(el, JSWorkerMessageHandler, link);
+        if (!JS_IsNull(port->on_message_func)) {
+            JSWorkerMessagePipe* ps = port->recv_pipe;
+            if (osrw_cnt + msg_cnt > length)
+                break;
+            handles[osrw_cnt + msg_cnt++] = ps->hSemaphore;
+        }
+    }
+    if(rwsize) *rwsize = osrw_cnt;
+    if (msgSize) *msgSize = msg_cnt;
+    return osrw_cnt + msg_cnt;
+}
+
+void js_handle_waitresult(JSContext* ctx, int ret, int osrw_cnt, int msg_cnt) {
+    JSRuntime* rt = JS_GetRuntime(ctx);
+    JSThreadState* ts = JS_GetRuntimeOpaque(rt);
+    JSOSRWHandler* rh;
+    struct list_head* el;
+
+    if (ret == WAIT_TIMEOUT) {
+        //wait timeout received.
+        JS_ExecuteTimer(ctx);
+    }else if (ret >= WAIT_OBJECT_0 && ret < WAIT_OBJECT_0 + osrw_cnt + msg_cnt) {
+        int idx = 0;
+        list_for_each(el, &ts->os_rw_handlers) {
+            rh = list_entry(el, JSOSRWHandler, link);
+            if (idx == ret - WAIT_OBJECT_0 && !JS_IsNull(rh->rw_func[0])) {
+                call_handler(ctx, rh->rw_func[0]);
+                /* must stop because the list may have been modified */
+                return;
+            }
+            if (idx == ret - WAIT_OBJECT_0 && !JS_IsNull(rh->rw_func[1])) {
+                call_handler(ctx, rh->rw_func[1]);
+                /* must stop because the list may have been modified */
+                return;
+            }
+            idx++;
+        }
+        idx = 0;
+        list_for_each(el, &ts->port_list) {
+            JSWorkerMessageHandler* port = list_entry(el, JSWorkerMessageHandler, link);
+            if (idx == (ret - WAIT_OBJECT_0 - osrw_cnt) && !JS_IsNull(port->on_message_func)) {
+                JSWorkerMessagePipe* ps = port->recv_pipe;
+                handle_posted_message(rt, ctx, port);
+                return;
+            }
+            idx++;
+        }
+    }
+}
+
+#endif
 /* main loop which calls the user JS callbacks */
 void js_std_loop(JSContext *ctx)
 {

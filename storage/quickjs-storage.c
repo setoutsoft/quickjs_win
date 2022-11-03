@@ -63,7 +63,7 @@ void errHandler(int error_code, char const *msg) {
 #define JS_CLASS_ARRAY 2
 
 JS_BOOL js_is_persitable(JSValue val) {
-  JSClassID cid = JS_GetClassID(val, NULL);
+  JSClassID cid = JS_GetClassID(val);
   return cid == JS_CLASS_OBJECT || cid == JS_CLASS_ARRAY || cid == js_index_class_id;
 }
 
@@ -801,7 +801,7 @@ static JSClassDef js_storage_class = {
 //|
 
 JS_BOOL db_is_index(JSValue val) {
-  return JS_GetClassID(val,NULL) == js_index_class_id;
+  return JS_GetClassID(val) == js_index_class_id;
 }
 
 static JSValue db_load_index(JSContext *ctx, JSStorage* pst, dybase_oid_t index_oid, int force_new) 

@@ -30,7 +30,20 @@
 extern "C" {
 #endif
 
-JSModuleDef *js_init_module_storage(JSContext *ctx, const char *module_name);
+#ifdef _WIN32
+
+#if defined(QJS_STATIC_LIB)
+#  define QJS_DLLPORT
+#elif defined(QJS_BUILD)
+#  define QJS_API __declspec (dllexport)
+#else
+#  define QJS_DLLPORT __declspec (dllimport)
+#endif
+#else
+#define QJS_DLLPORT
+#endif
+
+    QJS_API JSModuleDef *js_init_module_storage(JSContext *ctx, const char *module_name);
 
                                         
 #ifdef __cplusplus

@@ -100,7 +100,7 @@ int has_suffix(const char *str, const char *suffix)
 {
     size_t len = strlen(str);
     size_t slen = strlen(suffix);
-    return (len >= slen && !memcmp(str + len - slen, suffix, slen));
+    return (len >= slen && !strnicmp(str + len - slen, suffix, slen));
 }
 
 /* Dynamic buffer package */
