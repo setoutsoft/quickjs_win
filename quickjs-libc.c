@@ -43,6 +43,7 @@
   #include <sys/stat.h>
   #include <sys/utime.h>
   #include "win/dirent.h"
+  #include <direct.h>
   #ifndef PATH_MAX
     #define PATH_MAX MAX_PATH
   #endif
@@ -1981,6 +1982,7 @@ static int64_t get_time_ms(void)
     return (uint64_t)ts.tv_sec * 1000 + (ts.tv_nsec / 1000000);
 }
 #else
+int gettimeofday(struct timeval* tp, struct timezone* tzp);
 /* more portable, but does not work if the date is updated */
 static int64_t get_time_ms(void)
 {

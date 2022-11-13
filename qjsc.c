@@ -33,6 +33,7 @@
   #include <unistd.h>
 #else
   #include "win/getopt.h"
+  #include <process.h>
 #endif
 
 #include "cutils.h"

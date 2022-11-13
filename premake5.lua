@@ -27,7 +27,8 @@ workspace "quickjs"
 
   defines {
   	  "JS_STRICT_NAN_BOXING", -- this option enables x64 build on Windows/MSVC
-      "CONFIG_BIGNUM"
+      "CONFIG_BIGNUM",
+	  "_CRT_NONSTDC_NO_WARNINGS"
     } 
 
   if _OPTIONS["jsx"] then 

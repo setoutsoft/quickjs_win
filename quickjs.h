@@ -555,19 +555,13 @@ void JS_DumpMemoryUsage(FILE *fp, const JSMemoryUsage *s, JSRuntime *rt);
 JSAtom JS_NewAtomLen(JSContext *ctx, const char *str, size_t len);
 JSAtom JS_NewAtom(JSContext *ctx, const char *str);
 JSAtom JS_NewAtomUInt32(JSContext *ctx, uint32_t n);
-JSAtom JS_NewAtomLenRT(JSRuntime *rt, const char *str, int len);
-JSAtom JS_NewAtomSymbolLenRT(JSRuntime *rt, const char *str, int len);
 const char *JS_AtomGetStr(JSContext *ctx, char *buf, int buf_size, JSAtom atom);
-const char *JS_AtomGetStrRT(JSRuntime *rt, char *buf, int buf_size, JSAtom atom);
 JSAtom JS_DupAtom(JSContext *ctx, JSAtom v);
-JSAtom JS_DupAtomRT(JSRuntime *rt, JSAtom v);
 void JS_FreeAtom(JSContext *ctx, JSAtom v);
-void JS_FreeAtomRT(JSRuntime *rt, JSAtom v);
 JSValue JS_AtomToValue(JSContext *ctx, JSAtom atom);
 JSValue JS_AtomToString(JSContext *ctx, JSAtom atom);
 const char *JS_AtomToCString(JSContext *ctx, JSAtom atom);
 JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val);
-int    JS_AtomIsArrayIndex(JSContext *ctx, uint32_t *pval, JSAtom atom);
 
 /* object class support */
 
@@ -782,21 +776,6 @@ JSValue JS_GetException(JSContext *ctx);
 JS_BOOL JS_IsError(JSContext *ctx, JSValueConst val);
 void JS_ResetUncatchableError(JSContext *ctx);
 JSValue JS_NewError(JSContext *ctx);
-
-typedef enum JSErrorEnum {
-    JS_EVAL_ERROR,
-    JS_RANGE_ERROR,
-    JS_REFERENCE_ERROR,
-    JS_SYNTAX_ERROR,
-    JS_TYPE_ERROR,
-    JS_URI_ERROR,
-    JS_INTERNAL_ERROR,
-    JS_AGGREGATE_ERROR,
-
-    JS_NATIVE_ERROR_COUNT, /* number of different NativeError objects */
-} JSErrorEnum;
-
-JSValue JS_ThrowError(JSContext* ctx, JSErrorEnum error_num, const char* fmt, va_list ap);
 JSValue __js_printf_like(2, 3) JS_ThrowSyntaxError(JSContext *ctx, const char *fmt, ...);
 JSValue __js_printf_like(2, 3) JS_ThrowTypeError(JSContext *ctx, const char *fmt, ...);
 JSValue __js_printf_like(2, 3) JS_ThrowReferenceError(JSContext *ctx, const char *fmt, ...);
@@ -935,7 +914,6 @@ int JS_SetPrototype(JSContext *ctx, JSValueConst obj, JSValueConst proto_val);
 JSValue JS_GetPrototype(JSContext *ctx, JSValueConst val);
 JSValue JS_GetPrototypeOfDate(JSContext *ctx);
 
-int JS_CopyDataProperties(JSContext *ctx, JSValueConst target, JSValueConst source, JSValueConst excluded, int setprop);
 
 #define JS_GPN_STRING_MASK  (1 << 0)
 #define JS_GPN_SYMBOL_MASK  (1 << 1)

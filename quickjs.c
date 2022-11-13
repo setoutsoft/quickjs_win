@@ -84,6 +84,10 @@
 #define PRId64       "lld"
 #endif
 
+#ifdef _MSC_VER
+#pragma warning(disable:4244)
+#pragma warning(disable:4018)
+#endif
 /* dump object free */
 //#define DUMP_FREE
 //#define DUMP_CLOSURE
@@ -192,6 +196,18 @@ enum {
 static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 #define typed_array_size_log2(classid)  (typed_array_size_log2[(classid)- JS_CLASS_UINT8C_ARRAY])
 
+typedef enum JSErrorEnum {
+    JS_EVAL_ERROR,
+    JS_RANGE_ERROR,
+    JS_REFERENCE_ERROR,
+    JS_SYNTAX_ERROR,
+    JS_TYPE_ERROR,
+    JS_URI_ERROR,
+    JS_INTERNAL_ERROR,
+    JS_AGGREGATE_ERROR,
+    
+    JS_NATIVE_ERROR_COUNT, /* number of different NativeError objects */
+} JSErrorEnum;
 
 #define JS_MAX_LOCAL_VARS 65536
 #define JS_STACK_SIZE_MAX 65534
@@ -1972,6 +1988,8 @@ void JS_SetRuntimeInfo(JSRuntime *rt, const char *s)
         rt->rt_info = s;
 }
 
+void JS_FreeAtomRT(JSRuntime* rt, JSAtom v);
+
 void JS_FreeRuntime(JSRuntime *rt)
 {
     struct list_head *el, *el1;
@@ -2028,7 +2046,7 @@ void JS_FreeRuntime(JSRuntime *rt)
             printf("Secondary object leaks: %d\n", count);
     }
 #endif
-    //assert(list_empty(&rt->gc_obj_list)); todo:hjx
+    assert(list_empty(&rt->gc_obj_list));
 
     /* free the classes */
     for(i = 0; i < rt->class_count; i++) {
@@ -2666,7 +2684,7 @@ static int JS_InitAtoms(JSRuntime *rt)
     return 0;
 }
 
-JSAtom JS_DupAtomRT(JSRuntime *rt, JSAtom v)
+static JSAtom JS_DupAtomRT(JSRuntime *rt, JSAtom v)
 {
     JSAtomStruct *p;
 
@@ -2690,7 +2708,7 @@ JSAtom JS_DupAtom(JSContext *ctx, JSAtom v)
     return v;
 }
 
-JSAtomKindEnum JS_AtomGetKind(JSContext *ctx, JSAtom v)
+static JSAtomKindEnum JS_AtomGetKind(JSContext *ctx, JSAtom v)
 {
     JSRuntime *rt;
     JSAtomStruct *p;
@@ -2910,18 +2928,6 @@ static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
     return __JS_NewAtom(rt, p, atom_type);
 }
 
-JSAtom JS_NewAtomLenRT(JSRuntime *rt, const char *str, int len)
-{
-    return __JS_NewAtomInit(rt, str, len, JS_ATOM_TYPE_STRING);
-}
-
-JSAtom JS_NewAtomSymbolLenRT(JSRuntime *rt, const char *str, int len)
-{
-  return __JS_NewAtomInit(rt, str, len, JS_ATOM_TYPE_SYMBOL);
-}
-
-
-
 static JSAtom __JS_FindAtom(JSRuntime *rt, const char *str, size_t len,
                             int atom_type)
 {
@@ -3096,8 +3102,8 @@ static JSValue JS_NewSymbolFromAtom(JSContext *ctx, JSAtom descr,
 #define ATOM_GET_STR_BUF_SIZE 64
 
 /* Should only be used for debug. */
-const char *JS_AtomGetStrRT(JSRuntime *rt, char *buf, int buf_size,
-                            JSAtom atom)
+static const char *JS_AtomGetStrRT(JSRuntime *rt, char *buf, int buf_size,
+                                   JSAtom atom)
 {
     if (__JS_AtomIsTaggedInt(atom)) {
         snprintf(buf, buf_size, "%u", __JS_AtomToUInt32(atom));
@@ -3189,7 +3195,7 @@ JSValue JS_AtomToString(JSContext *ctx, JSAtom atom)
 
 /* return TRUE if the atom is an array index (i.e. 0 <= index <=
    2^32-2 and return its value */
-JS_BOOL JS_AtomIsArrayIndex(JSContext *ctx, uint32_t *pval, JSAtom atom)
+static BOOL JS_AtomIsArrayIndex(JSContext *ctx, uint32_t *pval, JSAtom atom)
 {
     if (__JS_AtomIsTaggedInt(atom)) {
         *pval = __JS_AtomToUInt32(atom);
@@ -6695,7 +6701,7 @@ static JSValue JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
     return ret;
 }
 
-JSValue JS_ThrowError(JSContext *ctx, JSErrorEnum error_num,
+static JSValue JS_ThrowError(JSContext *ctx, JSErrorEnum error_num,
                              const char *fmt, va_list ap)
 {
     JSRuntime *rt = ctx->rt;
@@ -15856,7 +15862,7 @@ exception:
     return -1;
 }
 
-__exception int JS_CopyDataProperties(JSContext *ctx,
+static __exception int JS_CopyDataProperties(JSContext *ctx,
                                              JSValueConst target,
                                              JSValueConst source,
                                              JSValueConst excluded,
@@ -42396,6 +42402,7 @@ static uint64_t xorshift64star(uint64_t *pstate)
     return x * 0x2545F4914F6CDD1D;
 }
 
+int gettimeofday(struct timeval* tp, struct timezone* tzp);
 static void js_random_init(JSContext *ctx)
 {
     struct timeval tv;
