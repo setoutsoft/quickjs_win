@@ -27,7 +27,8 @@ workspace "quickjs"
 
   defines {
   	  "JS_STRICT_NAN_BOXING", -- this option enables x64 build on Windows/MSVC
-      "CONFIG_BIGNUM",
+               "CONFIG_BIGNUM",
+               "QJS_BUILD",
 	  "_CRT_NONSTDC_NO_WARNINGS"
     } 
 
@@ -62,12 +63,14 @@ workspace "quickjs"
 		defines { "DEBUG" }
 		symbols "On"
 		optimize "Off"
+                          staticruntime "on"
 
 	-- Release configuration
 	filter { "configurations:Release" }
 		defines { "NDEBUG" }
 		optimize "Speed"
 		inlining "Auto"
+                           staticruntime "on"
 
 	filter { "language:not C#" }
 		defines { "_CRT_SECURE_NO_WARNINGS" }
@@ -84,9 +87,9 @@ workspace "quickjs"
 
 project "quickjs"
 	language "C"
-	kind "StaticLib"
+	kind "SharedLib"
 	files {
-    "cutils.h",
+                           "cutils.h",
 		"cutils.c",
 		"libregexp.c",
 		"libunicode.c",

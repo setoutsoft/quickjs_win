@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include <string.h>
+#include "quickjs-api.h"
 
 #ifdef _MSC_VER
   #include <windows.h>
@@ -83,10 +84,19 @@ enum {
 };
 #endif
 
-void pstrcpy(char *buf, int buf_size, const char *str);
-char *pstrcat(char *buf, int buf_size, const char *s);
-int strstart(const char *str, const char *val, const char **ptr);
-int has_suffix(const char *str, const char *suffix);
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+    QJS_API    void pstrcpy(char* buf, int buf_size, const char* str);
+    QJS_API char* pstrcat(char* buf, int buf_size, const char* s);
+    QJS_API int strstart(const char* str, const char* val, const char** ptr);
+    QJS_API int has_suffix(const char* str, const char* suffix);
+#ifdef __cplusplus
+}//extern "C" 
+#endif
 
 static inline int max_int(int a, int b)
 {
