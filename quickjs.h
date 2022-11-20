@@ -151,9 +151,9 @@ typedef struct JSRefCountHeader {
   #define JS_INFINITY_NEGATIVE JS_MKVAL(JS_TAG_FLOAT64,1)
   #define JS_INFINITY_POSITIVE JS_MKVAL(JS_TAG_FLOAT64,2)
 
-  double JS_VALUE_GET_FLOAT64(JSValue v);
+  QJS_API double JS_VALUE_GET_FLOAT64(JSValue v);
 
-  JSValue __JS_NewFloat64(JSContext* ctx, double d);
+  QJS_API JSValue __JS_NewFloat64(JSContext* ctx, double d);
 
   //#define JS_TAG_IS_FLOAT64(tag) ((tag & 0x7ff0) != 0)
   #define JS_TAG_IS_FLOAT64(tag) (tag == JS_TAG_FLOAT64)
