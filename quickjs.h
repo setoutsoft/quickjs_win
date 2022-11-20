@@ -151,39 +151,9 @@ typedef struct JSRefCountHeader {
   #define JS_INFINITY_NEGATIVE JS_MKVAL(JS_TAG_FLOAT64,1)
   #define JS_INFINITY_POSITIVE JS_MKVAL(JS_TAG_FLOAT64,2)
 
-  static inline double JS_VALUE_GET_FLOAT64(JSValue v)
-  {
-    if (v > 0xFFFFFFFFFFFFFull) {
-    union { JSValue v; double d; } u;
-    u.v = ~v;
-    return u.d;
-  }
-    else if (v == JS_NAN)
-      return JS_FLOAT64_NAN;
-    else if (v == JS_INFINITY_POSITIVE)
-      return INFINITY;
-    else 
-      return -INFINITY;
-  }
+  double JS_VALUE_GET_FLOAT64(JSValue v);
 
-  static inline JSValue __JS_NewFloat64(JSContext *ctx, double d)
-  {
-    union { double d; uint64_t u64; } u;
-    JSValue v;
-    u.d = d;
-    /* normalize NaN */
-    if (js_unlikely((u.u64 & 0x7ff0000000000000) == 0x7ff0000000000000)) {
-      if( isnan(d))
-      v = JS_NAN;
-      else if (d < 0.0)
-        v = JS_INFINITY_NEGATIVE;
-      else
-        v = JS_INFINITY_POSITIVE;
-    }
-    else
-      v = ~u.u64;
-    return v;
-  }
+  JSValue __JS_NewFloat64(JSContext* ctx, double d);
 
   //#define JS_TAG_IS_FLOAT64(tag) ((tag & 0x7ff0) != 0)
   #define JS_TAG_IS_FLOAT64(tag) (tag == JS_TAG_FLOAT64)
@@ -271,34 +241,11 @@ typedef uint64_t JSValue;
 
 #define JS_FLOAT64_TAG_ADDEND (0x7ff80000 - JS_TAG_FIRST + 1) /* quiet NaN encoding */
 
-static inline double JS_VALUE_GET_FLOAT64(JSValue v)
-{
-    union {
-        JSValue v;
-        double d;
-    } u;
-    u.v = v;
-    u.v += (uint64_t)JS_FLOAT64_TAG_ADDEND << 32;
-    return u.d;
-}
+double JS_VALUE_GET_FLOAT64(JSValue v);
 
 #define JS_NAN (0x7ff8000000000000 - ((uint64_t)JS_FLOAT64_TAG_ADDEND << 32))
 
-static inline JSValue __JS_NewFloat64(JSContext *ctx, double d)
-{
-    union {
-        double d;
-        uint64_t u64;
-    } u;
-    JSValue v;
-    u.d = d;
-    /* normalize NaN */
-    if (js_unlikely((u.u64 & 0x7fffffffffffffff) > 0x7ff0000000000000))
-        v = JS_NAN;
-    else
-        v = u.u64 - ((uint64_t)JS_FLOAT64_TAG_ADDEND << 32);
-    return v;
-}
+JSValue __JS_NewFloat64(JSContext* ctx, double d);
 
 #define JS_TAG_IS_FLOAT64(tag) ((unsigned)((tag) - JS_TAG_FIRST) >= (JS_TAG_FLOAT64 - JS_TAG_FIRST))
 
@@ -1224,7 +1171,6 @@ QJS_DLLPORT JSValue  js_debugger_local_variables(JSContext *ctx, int stack_index
 
 QJS_API void*    js_debugger_get_object_id(JSValue val);
 
-#undef js_unlikely
 #undef js_force_inline
 
 #ifdef __cplusplus

@@ -1828,6 +1828,70 @@ static const JSMallocFunctions def_malloc_funcs = {
 #endif
 };
 
+#ifdef JS_STRICT_NAN_BOXING
+double JS_VALUE_GET_FLOAT64(JSValue v)
+{
+    if (v > 0xFFFFFFFFFFFFFull) {
+        union { JSValue v; double d; } u;
+        u.v = ~v;
+        return u.d;
+    }
+    else if (v == JS_NAN)
+        return JS_FLOAT64_NAN;
+    else if (v == JS_INFINITY_POSITIVE)
+        return INFINITY;
+    else
+        return -INFINITY;
+}
+
+JSValue __JS_NewFloat64(JSContext* ctx, double d)
+{
+    union { double d; uint64_t u64; } u;
+    JSValue v;
+    u.d = d;
+    /* normalize NaN */
+    if (js_unlikely((u.u64 & 0x7ff0000000000000) == 0x7ff0000000000000)) {
+        if (isnan(d))
+            v = JS_NAN;
+        else if (d < 0.0)
+            v = JS_INFINITY_NEGATIVE;
+        else
+            v = JS_INFINITY_POSITIVE;
+    }
+    else
+        v = ~u.u64;
+    return v;
+}
+#else//JS_STRICT_NAN_BOXING
+double JS_VALUE_GET_FLOAT64(JSValue v)
+{
+    union {
+        JSValue v;
+        double d;
+    } u;
+    u.v = v;
+    u.v += (uint64_t)JS_FLOAT64_TAG_ADDEND << 32;
+    return u.d;
+}
+
+JSValue __JS_NewFloat64(JSContext* ctx, double d)
+{
+    union {
+        double d;
+        uint64_t u64;
+    } u;
+    JSValue v;
+    u.d = d;
+    /* normalize NaN */
+    if (js_unlikely((u.u64 & 0x7fffffffffffffff) > 0x7ff0000000000000))
+        v = JS_NAN;
+    else
+        v = u.u64 - ((uint64_t)JS_FLOAT64_TAG_ADDEND << 32);
+    return v;
+}
+
+#endif//JS_STRICT_NAN_BOXING
+
 JSRuntime *JS_NewRuntime(void)
 {
     return JS_NewRuntime2(&def_malloc_funcs, NULL);
