@@ -597,7 +597,7 @@ JSModuleDef *js_module_loader(JSContext *ctx,
 {
     JSModuleDef *m;
 
-    if (has_suffix(module_name, ".so")) {
+    if (has_suffix(module_name, ".so") || has_suffix(module_name, ".dll")) {
         m = js_module_loader_so(ctx, module_name);
     } else {
         size_t buf_len;
