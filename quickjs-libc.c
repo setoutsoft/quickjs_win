@@ -468,8 +468,25 @@ typedef JSModuleDef *(JSInitModuleFunc)(JSContext *ctx,
 static JSModuleDef *js_module_loader_so(JSContext *ctx,
                                         const char *module_name)
 {
-    JS_ThrowReferenceError(ctx, "shared library modules are not supported yet");
-    return NULL;
+    HMODULE hd = LoadLibraryA(module_name);
+    if (hd == NULL) {
+        JS_ThrowReferenceError(ctx, "load shared library modules failed");
+        return NULL;
+    }
+    char szName[MAX_PATH];
+    _splitpath(module_name, NULL, NULL, szName, NULL);
+    JSInitModuleFunc* init=NULL;
+    JSModuleDef* m = NULL;
+    init = (JSInitModuleFunc*)GetProcAddress(hd, "js_init_module");
+    if (init) {
+        m = init(ctx, szName);
+    }
+    if(!m){
+        FreeLibrary(hd);
+        JS_ThrowReferenceError(ctx, "js_init_module failed");
+        return NULL;
+    }
+    return m;
 }
 #else
 static JSModuleDef *js_module_loader_so(JSContext *ctx,
