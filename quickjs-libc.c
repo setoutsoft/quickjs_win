@@ -463,6 +463,7 @@ static JSValue js_std_loadFile(JSContext *ctx, JSValueConst this_val,
 typedef JSModuleDef *(JSInitModuleFunc)(JSContext *ctx,
                                         const char *module_name);
 
+void JS_SetModuleHandle(JSModuleDef* m, void* so_handle);
 
 #if defined(_WIN32)
 static JSModuleDef *js_module_loader_so(JSContext *ctx,
@@ -486,6 +487,7 @@ static JSModuleDef *js_module_loader_so(JSContext *ctx,
         JS_ThrowReferenceError(ctx, "js_init_module failed");
         return NULL;
     }
+    JS_SetModuleHandle(m,(void*)hd);
     return m;
 }
 #else
@@ -535,6 +537,7 @@ static JSModuleDef *js_module_loader_so(JSContext *ctx,
             dlclose(hd);
         return NULL;
     }
+    JS_SetModuleHandle(m, hd);
     return m;
 }
 #endif /* !_WIN32 */

@@ -28,7 +28,6 @@ workspace "quickjs"
   defines {
   	  "JS_STRICT_NAN_BOXING", -- this option enables x64 build on Windows/MSVC
                "CONFIG_BIGNUM",
-               "QJS_BUILD",
 	  "_CRT_NONSTDC_NO_WARNINGS"
     } 
 
@@ -88,6 +87,7 @@ workspace "quickjs"
 project "quickjs"
 	language "C"
 	kind "SharedLib"
+	defines{"QJS_BUILD"}
 	files {
                            "cutils.h",
 		"cutils.c",
@@ -102,6 +102,7 @@ project "quickjs"
 		"libunicode-table.h",
 		"list.h",
 		"quickjs.h",
+		"quickjs-api.h",
 		"quickjs-atom.h",
 		"quickjs-libc.h",
 		"quickjs-opcode.h",

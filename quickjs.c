@@ -825,6 +825,7 @@ struct JSModuleDef {
     BOOL eval_has_exception : 8;
     JSValue eval_exception;
     JSValue meta_obj; /* for import.meta */
+    void* so_handle; /* for import so */
 };
 
 typedef struct JSJobEntry {
@@ -15926,7 +15927,7 @@ exception:
     return -1;
 }
 
-static __exception int JS_CopyDataProperties(JSContext *ctx,
+int JS_CopyDataProperties(JSContext *ctx,
                                              JSValueConst target,
                                              JSValueConst source,
                                              JSValueConst excluded,
@@ -27469,6 +27470,7 @@ static JSModuleDef *js_new_module_def(JSContext *ctx, JSAtom name)
     m->func_obj = JS_UNDEFINED;
     m->eval_exception = JS_UNDEFINED;
     m->meta_obj = JS_UNDEFINED;
+    m->so_handle = NULL;
     list_add_tail(&m->link, &ctx->loaded_modules);
     return m;
 }
@@ -27525,6 +27527,13 @@ static void js_free_module_def(JSContext *ctx, JSModuleDef *m)
     JS_FreeValue(ctx, m->func_obj);
     JS_FreeValue(ctx, m->eval_exception);
     JS_FreeValue(ctx, m->meta_obj);
+    if (m->so_handle != NULL) {
+#ifdef _WIN32
+        FreeLibrary((HMODULE)m->so_handle);
+#else
+        dlclose(m->so_handle);
+#endif
+    }
     list_del(&m->link);
     js_free(ctx, m);
 }
@@ -27648,6 +27657,11 @@ int JS_AddModuleExport(JSContext *ctx, JSModuleDef *m, const char *export_name)
         return -1;
     else
         return 0;
+}
+
+void JS_SetModuleHandle(JSModuleDef* m, void* so_handle) {
+    assert(m->so_handle == NULL);
+    m->so_handle = so_handle;
 }
 
 int JS_SetModuleExport(JSContext *ctx, JSModuleDef *m, const char *export_name,
