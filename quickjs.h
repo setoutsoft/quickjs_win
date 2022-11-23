@@ -988,7 +988,7 @@ QJS_API int JS_EnqueueJob(JSContext *ctx, JSJobFunc *job_func, int argc, JSValue
 
 QJS_API JS_BOOL JS_IsJobPending(JSRuntime *rt);
 QJS_API int JS_ExecutePendingJob(JSRuntime *rt, JSContext **pctx);
-
+QJS_API void JS_ExecuteTimer(JSContext* ctx);
 /* Object Writer/Reader (currently only used to handle precompiled code) */
 #define JS_WRITE_OBJ_BYTECODE  (1 << 0) /* allow function/module */
 #define JS_WRITE_OBJ_BSWAP     (1 << 1) /* byte swapped output */

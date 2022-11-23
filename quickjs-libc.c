@@ -2107,6 +2107,40 @@ static void call_handler(JSContext *ctx, JSValueConst func)
     JS_FreeValue(ctx, ret);
 }
 
+void JS_ExecuteTimer(JSContext* ctx) {
+    JSRuntime* rt = JS_GetRuntime(ctx);
+    JSThreadState* ts = JS_GetRuntimeOpaque(rt);
+    int64_t cur_time, delay;
+    JSOSRWHandler* rh;
+    struct list_head* el;
+
+    /* XXX: handle signals if useful */
+
+    if (list_empty(&ts->os_timers))
+        return ; /* no more timer */
+
+    /* XXX: only timers are supported */
+    {
+        cur_time = get_time_ms();
+        list_for_each(el, &ts->os_timers) {
+            JSOSTimer* th = list_entry(el, JSOSTimer, link);
+            delay = th->timeout - cur_time;
+            if (delay <= 0) {
+                JSValue func;
+                /* the timer expired */
+                func = th->func;
+                th->func = JS_UNDEFINED;
+                unlink_timer(rt, th);
+                if (!th->has_object)
+                    free_timer(rt, th);
+                call_handler(ctx, func);
+                JS_FreeValue(ctx, func);
+                return 0;
+            }
+        }
+    }
+}
+
 #if defined(_WIN32)
 
 static int js_os_poll(JSContext *ctx)
