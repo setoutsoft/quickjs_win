@@ -5722,11 +5722,47 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
     }
 }
 
-void __JS_FreeValue(JSContext *ctx, JSValue v)
+static void __JS_FreeValue(JSContext *ctx, JSValue v)
 {
     __JS_FreeValueRT(ctx->rt, v);
 }
 
+void JS_FreeValue(JSContext* ctx, JSValue v)
+{
+    if (JS_VALUE_HAS_REF_COUNT(v)) {
+        JSRefCountHeader* p = (JSRefCountHeader*)JS_VALUE_GET_PTR(v);
+        if (--p->ref_count <= 0) {
+            __JS_FreeValue(ctx, v);
+        }
+    }
+}
+void JS_FreeValueRT(JSRuntime* rt, JSValue v)
+{
+    if (JS_VALUE_HAS_REF_COUNT(v)) {
+        JSRefCountHeader* p = (JSRefCountHeader*)JS_VALUE_GET_PTR(v);
+        if (--p->ref_count <= 0) {
+            __JS_FreeValueRT(rt, v);
+        }
+    }
+}
+
+JSValue JS_DupValue(JSContext* ctx, JSValueConst v)
+{
+    if (JS_VALUE_HAS_REF_COUNT(v)) {
+        JSRefCountHeader* p = (JSRefCountHeader*)JS_VALUE_GET_PTR(v);
+        p->ref_count++;
+    }
+    return (JSValue)v;
+}
+
+JSValue JS_DupValueRT(JSRuntime* rt, JSValueConst v)
+{
+    if (JS_VALUE_HAS_REF_COUNT(v)) {
+        JSRefCountHeader* p = (JSRefCountHeader*)JS_VALUE_GET_PTR(v);
+        p->ref_count++;
+    }
+    return (JSValue)v;
+}
 /* garbage collection */
 
 static void add_gc_object(JSRuntime *rt, JSGCObjectHeader *h,

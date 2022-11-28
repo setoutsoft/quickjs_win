@@ -729,45 +729,11 @@ QJS_API JSValue __js_printf_like(2, 3) JS_ThrowReferenceError(JSContext *ctx, co
 QJS_API JSValue __js_printf_like(2, 3) JS_ThrowRangeError(JSContext *ctx, const char *fmt, ...);
 QJS_API JSValue __js_printf_like(2, 3) JS_ThrowInternalError(JSContext *ctx, const char *fmt, ...);
 QJS_API JSValue JS_ThrowOutOfMemory(JSContext *ctx);
+QJS_API void JS_FreeValue(JSContext* ctx, JSValue v);
+QJS_API void JS_FreeValueRT(JSRuntime* rt, JSValue v);
 
-QJS_API void __JS_FreeValue(JSContext *ctx, JSValue v);
-static inline void JS_FreeValue(JSContext *ctx, JSValue v)
-{
-    if (JS_VALUE_HAS_REF_COUNT(v)) {
-        JSRefCountHeader *p = (JSRefCountHeader *)JS_VALUE_GET_PTR(v);
-        if (--p->ref_count <= 0) {
-            __JS_FreeValue(ctx, v);
-        }
-    }
-}
-QJS_API void __JS_FreeValueRT(JSRuntime *rt, JSValue v);
-static inline void JS_FreeValueRT(JSRuntime *rt, JSValue v)
-{
-    if (JS_VALUE_HAS_REF_COUNT(v)) {
-        JSRefCountHeader *p = (JSRefCountHeader *)JS_VALUE_GET_PTR(v);
-        if (--p->ref_count <= 0) {
-            __JS_FreeValueRT(rt, v);
-        }
-    }
-}
-
-static inline JSValue JS_DupValue(JSContext *ctx, JSValueConst v)
-{
-    if (JS_VALUE_HAS_REF_COUNT(v)) {
-        JSRefCountHeader *p = (JSRefCountHeader *)JS_VALUE_GET_PTR(v);
-        p->ref_count++;
-    }
-    return (JSValue)v;
-}
-
-static inline JSValue JS_DupValueRT(JSRuntime *rt, JSValueConst v)
-{
-    if (JS_VALUE_HAS_REF_COUNT(v)) {
-        JSRefCountHeader *p = (JSRefCountHeader *)JS_VALUE_GET_PTR(v);
-        p->ref_count++;
-    }
-    return (JSValue)v;
-}
+QJS_API JSValue JS_DupValue(JSContext* ctx, JSValueConst v);
+QJS_API JSValue JS_DupValueRT(JSRuntime* rt, JSValueConst v);
 
 QJS_API int JS_ToBool(JSContext *ctx, JSValueConst val); /* return -1 for JS_EXCEPTION */
 QJS_API int JS_ToInt32(JSContext *ctx, int32_t *pres, JSValueConst val);
