@@ -4029,6 +4029,15 @@ int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length,int *rwsize,
     int osrw_cnt = 0;
     int msg_cnt = 0;
 
+    JSContext* ctx1 = NULL;
+    int err = 0;
+    JS_ExecutePendingJob(JS_GetRuntime(ctx), &ctx1);
+    if (err <= 0) {
+        if (err < 0) {
+            js_std_dump_error(ctx1);
+        }
+    }
+    JS_ExecuteTimer(ctx);
 
     if (list_empty(&ts->os_rw_handlers) && list_empty(&ts->port_list))
         return 0; /* no more events */
