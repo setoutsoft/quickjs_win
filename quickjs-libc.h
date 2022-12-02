@@ -46,6 +46,8 @@ extern "C" {
                               JS_BOOL use_realpath, JS_BOOL is_main);
     QJS_API JSModuleDef *js_module_loader(JSContext *ctx,
                               const char *module_name, void *opaque);
+    QJS_API void js_module_unloader(JSContext* ctx, void* so_handler);
+
     QJS_API void js_std_eval_binary(JSContext *ctx, const uint8_t *buf, size_t buf_len,
                         int flags);
     QJS_API void js_std_promise_rejection_tracker(JSContext *ctx, JSValueConst promise,

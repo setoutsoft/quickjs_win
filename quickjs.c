@@ -299,6 +299,7 @@ struct JSRuntime {
 
     JSModuleNormalizeFunc *module_normalize_func;
     JSModuleLoaderFunc *module_loader_func;
+    JSModuleUnloaderFunc* module_unloader_func;
     void *module_loader_opaque;
 
     BOOL can_block : 8; /* TRUE if Atomics.wait can block */
@@ -27533,6 +27534,7 @@ static void js_mark_module_def(JSRuntime *rt, JSModuleDef *m,
 static void js_free_module_def(JSContext *ctx, JSModuleDef *m)
 {
     int i;
+    JSRuntime* rt = ctx->rt;
 
     JS_FreeAtom(ctx, m->module_name);
 
@@ -27563,12 +27565,9 @@ static void js_free_module_def(JSContext *ctx, JSModuleDef *m)
     JS_FreeValue(ctx, m->func_obj);
     JS_FreeValue(ctx, m->eval_exception);
     JS_FreeValue(ctx, m->meta_obj);
-    if (m->so_handle != NULL) {
-#ifdef _WIN32
-        FreeLibrary((HMODULE)m->so_handle);
-#else
-        dlclose(m->so_handle);
-#endif
+
+    if (rt->module_unloader_func) {
+        rt->module_unloader_func(ctx, m->so_handle);
     }
     list_del(&m->link);
     js_free(ctx, m);
@@ -27721,10 +27720,13 @@ int JS_SetModuleExport(JSContext *ctx, JSModuleDef *m, const char *export_name,
 
 void JS_SetModuleLoaderFunc(JSRuntime *rt,
                             JSModuleNormalizeFunc *module_normalize,
-                            JSModuleLoaderFunc *module_loader, void *opaque)
+                            JSModuleLoaderFunc *module_loader,
+                            JSModuleUnloaderFunc* module_unloader,
+                            void *opaque)
 {
     rt->module_normalize_func = module_normalize;
     rt->module_loader_func = module_loader;
+    rt->module_unloader_func = module_unloader;
     rt->module_loader_opaque = opaque;
 }
 

@@ -464,8 +464,10 @@ static JSValue js_std_loadFile(JSContext *ctx, JSValueConst this_val,
     return ret;
 }
 
-typedef JSModuleDef *(JSInitModuleFunc)(JSContext *ctx,
+typedef JSModuleDef * (JSInitModuleFunc)(JSContext *ctx,
                                         const char *module_name);
+
+typedef void (JSUninitModuleFunc)(JSContext* ctx);
 
 void JS_SetModuleHandle(JSModuleDef* m, void* so_handle);
 
@@ -494,6 +496,17 @@ static JSModuleDef *js_module_loader_so(JSContext *ctx,
     JS_SetModuleHandle(m,(void*)hd);
     return m;
 }
+
+static void js_module_unload_so(JSContext* ctx, void *so_handle)
+{
+    JSUninitModuleFunc* uninit;
+    if (so_handle != NULL) {
+        uninit = (JSUninitModuleFunc*)GetProcAddress((HMODULE)so_handle, "js_uninit_module");
+        if (uninit) uninit(ctx);
+        FreeLibrary((HMODULE)so_handle);
+    }
+}
+
 #else
 static JSModuleDef *js_module_loader_so(JSContext *ctx,
                                         const char *module_name)
@@ -543,6 +556,16 @@ static JSModuleDef *js_module_loader_so(JSContext *ctx,
     }
     JS_SetModuleHandle(m, hd);
     return m;
+}
+
+static void js_module_unload_so(JSContext* ctx, void* so_handle)
+{
+    JSUninitModuleFunc* uninit;
+    if (so_handle != NULL) {
+        uninit = dlsym(m->so_handle, "js_uninit_module");
+        if (uninit) uninit(ctx);
+        dlclose(m->so_handle);
+    }
 }
 #endif /* !_WIN32 */
 
@@ -631,6 +654,11 @@ JSModuleDef *js_module_loader(JSContext *ctx,
         JS_FreeValue(ctx, func_val);
     }
     return m;
+}
+
+void js_module_unloader(JSContext* ctx, void* so_handler)
+{
+    js_module_unload_so(ctx, so_handler);
 }
 
 static JSValue js_std_exit(JSContext *ctx, JSValueConst this_val,
@@ -3421,7 +3449,7 @@ static void *worker_func(void *opaque)
     }        
     js_std_init_handlers(rt);
 
-    JS_SetModuleLoaderFunc(rt, NULL, js_module_loader, NULL);
+    JS_SetModuleLoaderFunc(rt, NULL, js_module_loader, js_module_unloader, NULL);
 
     /* set the pipe to communicate with the parent */
     ts = JS_GetRuntimeOpaque(rt);

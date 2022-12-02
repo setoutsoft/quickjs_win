@@ -937,12 +937,13 @@ typedef char *JSModuleNormalizeFunc(JSContext *ctx,
                                     const char *module_name, void *opaque);
 typedef JSModuleDef *JSModuleLoaderFunc(JSContext *ctx,
                                         const char *module_name, void *opaque);
+typedef void JSModuleUnloaderFunc(JSContext* ctx,void *so_handler);
 
 /* module_normalize = NULL is allowed and invokes the default module
    filename normalizer */
 QJS_API void JS_SetModuleLoaderFunc(JSRuntime *rt,
                             JSModuleNormalizeFunc *module_normalize,
-                            JSModuleLoaderFunc *module_loader, void *opaque);
+                            JSModuleLoaderFunc *module_loader, JSModuleUnloaderFunc * module_unloader, void *opaque);
 /* return the import.meta object of a module */
 QJS_API JSValue JS_GetImportMeta(JSContext *ctx, JSModuleDef *m);
 QJS_API JSAtom JS_GetModuleName(JSContext *ctx, JSModuleDef *m);
