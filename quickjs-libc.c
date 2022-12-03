@@ -2122,6 +2122,9 @@ static JSValue js_os_clearTimeout(JSContext *ctx, JSValueConst this_val,
     if (!th)
         return JS_EXCEPTION;
     unlink_timer(JS_GetRuntime(ctx), th);
+    //JS_FreeValue(ctx, th->func);
+    JS_FreeValue(ctx, th->thisObj);
+
     return JS_UNDEFINED;
 }
 
