@@ -103,6 +103,7 @@ typedef struct {
     BOOL has_object;
     int64_t timeout;
     JSValue func;
+    JSValue thisObj;
 } JSOSTimer;
 
 typedef struct {
@@ -2085,7 +2086,7 @@ static JSValue js_os_setTimeout(JSContext *ctx, JSValueConst this_val,
     JSRuntime *rt = JS_GetRuntime(ctx);
     JSThreadState *ts = JS_GetRuntimeOpaque(rt);
     int64_t delay;
-    JSValueConst func;
+    JSValueConst func,thisObj= JS_UNDEFINED;
     JSOSTimer *th;
     JSValue obj;
 
@@ -2094,6 +2095,9 @@ static JSValue js_os_setTimeout(JSContext *ctx, JSValueConst this_val,
         return JS_ThrowTypeError(ctx, "not a function");
     if (JS_ToInt64(ctx, &delay, argv[1]))
         return JS_EXCEPTION;
+    if (argc > 2 && JS_IsObject(argv[2])) {
+        thisObj = argv[2];
+    }
     obj = JS_NewObjectClass(ctx, js_os_timer_class_id);
     if (JS_IsException(obj))
         return obj;
@@ -2105,6 +2109,7 @@ static JSValue js_os_setTimeout(JSContext *ctx, JSValueConst this_val,
     th->has_object = TRUE;
     th->timeout = get_time_ms() + delay;
     th->func = JS_DupValue(ctx, func);
+    th->thisObj = JS_DupValue(ctx, thisObj);
     list_add_tail(&th->link, &ts->os_timers);
     JS_SetOpaque(obj, th);
     return obj;
@@ -2139,6 +2144,22 @@ static void call_handler(JSContext *ctx, JSValueConst func)
     JS_FreeValue(ctx, ret);
 }
 
+static void call_handler2(JSContext* ctx, JSValueConst func, JSValueConst thisObj)
+{
+    JSValue ret, func1, thisObj1;
+    /* 'func' might be destroyed when calling itself (if it frees the
+       handler), so must take extra care */
+    func1 = JS_DupValue(ctx, func);
+    thisObj1 = JS_DupValue(ctx, thisObj);
+    ret = JS_Call(ctx, func1, thisObj1, 0, NULL);
+    JS_FreeValue(ctx, func1);
+    JS_FreeValue(ctx, thisObj1);
+
+    if (JS_IsException(ret))
+        js_std_dump_error(ctx);
+    JS_FreeValue(ctx, ret);
+}
+
 void JS_ExecuteTimer(JSContext* ctx) {
     JSRuntime* rt = JS_GetRuntime(ctx);
     JSThreadState* ts = JS_GetRuntimeOpaque(rt);
@@ -2158,15 +2179,18 @@ void JS_ExecuteTimer(JSContext* ctx) {
             JSOSTimer* th = list_entry(el, JSOSTimer, link);
             delay = th->timeout - cur_time;
             if (delay <= 0) {
-                JSValue func;
+                JSValue func,thisObj;
                 /* the timer expired */
                 func = th->func;
+                thisObj = th->thisObj;
                 th->func = JS_UNDEFINED;
+                th->thisObj = JS_UNDEFINED;
                 unlink_timer(rt, th);
                 if (!th->has_object)
                     free_timer(rt, th);
-                call_handler(ctx, func);
+                call_handler2(ctx, func, thisObj);
                 JS_FreeValue(ctx, func);
+                JS_FreeValue(ctx, thisObj);
                 return;
             }
         }
@@ -2294,15 +2318,18 @@ static int js_os_poll(JSContext* ctx)
             JSOSTimer* th = list_entry(el, JSOSTimer, link);
             delay = th->timeout - cur_time;
             if (delay <= 0) {
-                JSValue func;
+                JSValue func,thisObj;
                 /* the timer expired */
                 func = th->func;
+                thisObj = th->thisObj;
                 th->func = JS_UNDEFINED;
+                th->thisObj = JS_UNDEFINED;
                 unlink_timer(rt, th);
                 if (!th->has_object)
                     free_timer(rt, th);
-                call_handler(ctx, func);
+                call_handler2(ctx, func,thisObj);
                 JS_FreeValue(ctx, func);
+                JS_FreeValue(ctx, thisObj);
                 return 0;
             }
             else if (delay < min_delay) {
