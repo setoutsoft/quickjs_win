@@ -11079,6 +11079,7 @@ static int JS_ToInt64Free(JSContext *ctx, int64_t *pres, JSValue val)
         }
         break;
 #ifdef CONFIG_BIGNUM
+    case JS_TAG_BIG_INT:
     case JS_TAG_BIG_FLOAT:
         {
             JSBigFloat *p = JS_VALUE_GET_PTR(val);
@@ -11154,6 +11155,7 @@ static int JS_ToInt32Free(JSContext *ctx, int32_t *pres, JSValue val)
         }
         break;
 #ifdef CONFIG_BIGNUM
+    case JS_TAG_BIG_INT:
     case JS_TAG_BIG_FLOAT:
         {
             JSBigFloat *p = JS_VALUE_GET_PTR(val);
