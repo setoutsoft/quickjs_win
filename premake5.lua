@@ -16,11 +16,6 @@ newoption {
    description = "Will add JSX support"
 }
 
-newoption {
-   trigger     = "storage",
-   description = "Will add persistent storage support"
-}
-
 workspace "quickjs"
 	-- Premake output folder
 	location(path.join(".build", _ACTION))
@@ -33,10 +28,6 @@ workspace "quickjs"
 
   if _OPTIONS["jsx"] then 
     defines { "CONFIG_JSX" } -- native JSX support - enables JSX literals
-  end
-
-  if _OPTIONS["storage"] then 
-    defines { "CONFIG_STORAGE" } -- persistent storage support
   end
 
 
@@ -108,20 +99,6 @@ project "quickjs"
 		"quickjs-opcode.h",
 		"quickjs-jsx.h",
 	}
-
-if _OPTIONS["storage"] then 
-  exceptionhandling "On"
-  files {
-    "storage/quickjs-storage.c",
-    "storage/quickjs-storage.h",
-    "storage/dybase/src/*.cpp",
-    "storage/dybase/src/*.h",
-    "storage/dybase/include/*.h"
-  }
-  includedirs {
-    "storage/dybase/include"
-  }
-end
 
 -----------------------------------------------------------------------------------------------------------------------
 
