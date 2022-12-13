@@ -2194,7 +2194,8 @@ void JS_ExecuteTimer(JSContext* ctx) {
                     free_timer(rt, th);
                 call_handler2(ctx, func, thisObj);
                 JS_FreeValue(ctx, func);
-                JS_FreeValue(ctx, thisObj);
+                if(JS_IsObject(thisObj))
+                    JS_FreeValue(ctx, thisObj);
                 goto time_start2;
             }
         }
@@ -4105,15 +4106,19 @@ time_start:
             JSOSTimer* th = list_entry(el, JSOSTimer, link);
             int64_t delay = (int64_t)(th->timeout - cur_time);
             if (delay <= 0) {
-                JSValue func;
+                JSValue func,thisObj;
                 /* the timer expired */
                 func = th->func;
+                thisObj = th->thisObj;
                 th->func = JS_UNDEFINED;
+                th->thisObj = JS_UNDEFINED;
                 unlink_timer(rt, th);
                 if (!th->has_object)
                     free_timer(rt, th);
-                call_handler(ctx, func);
+                call_handler2(ctx, func, thisObj);
                 JS_FreeValue(ctx, func);
+                if(JS_IsObject(thisObj))
+                    JS_FreeValue(ctx, thisObj);
                 goto time_start;
             }
             else if (delay < min_delay || min_delay==INFINITE) {
