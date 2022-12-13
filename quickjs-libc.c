@@ -2178,6 +2178,7 @@ void JS_ExecuteTimer(JSContext* ctx) {
     /* XXX: only timers are supported */
     {
         cur_time = get_time_ms();
+    time_start2:
         list_for_each(el, &ts->os_timers) {
             JSOSTimer* th = list_entry(el, JSOSTimer, link);
             delay = th->timeout - cur_time;
@@ -2194,7 +2195,7 @@ void JS_ExecuteTimer(JSContext* ctx) {
                 call_handler2(ctx, func, thisObj);
                 JS_FreeValue(ctx, func);
                 JS_FreeValue(ctx, thisObj);
-                return;
+                goto time_start2;
             }
         }
     }
@@ -4099,6 +4100,7 @@ int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length,int *rwsize,
 
     if (!list_empty(&ts->os_timers)) {
         int64_t cur_time = get_time_ms();
+time_start:
         list_for_each(el, &ts->os_timers) {
             JSOSTimer* th = list_entry(el, JSOSTimer, link);
             int64_t delay = (int64_t)(th->timeout - cur_time);
@@ -4112,7 +4114,7 @@ int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length,int *rwsize,
                     free_timer(rt, th);
                 call_handler(ctx, func);
                 JS_FreeValue(ctx, func);
-                return 0;
+                goto time_start;
             }
             else if (delay < min_delay || min_delay==INFINITE) {
                 min_delay = (uint32_t)delay;
