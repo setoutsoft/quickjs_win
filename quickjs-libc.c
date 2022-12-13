@@ -4078,7 +4078,7 @@ void js_std_promise_rejection_tracker(JSContext *ctx, JSValueConst promise,
 
 #ifdef _WIN32
 
-int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length,int *rwsize,int *msgSize)
+int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length,int *rwsize,int *msgSize,uint32_t *waitTime)
 {
     JSRuntime* rt = JS_GetRuntime(ctx);
     JSThreadState* ts = JS_GetRuntimeOpaque(rt);
@@ -4086,6 +4086,7 @@ int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length,int *rwsize,
     struct list_head* el;
     int osrw_cnt = 0;
     int msg_cnt = 0;
+    uint32_t min_delay = INFINITE;
 
     JSContext* ctx1 = NULL;
     int err = 0;
@@ -4095,8 +4096,32 @@ int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length,int *rwsize,
             js_std_dump_error(ctx1);
         }
     }
-    JS_ExecuteTimer(ctx);
 
+    if (!list_empty(&ts->os_timers)) {
+        int64_t cur_time = get_time_ms();
+        list_for_each(el, &ts->os_timers) {
+            JSOSTimer* th = list_entry(el, JSOSTimer, link);
+            int64_t delay = (int64_t)(th->timeout - cur_time);
+            if (delay <= 0) {
+                JSValue func;
+                /* the timer expired */
+                func = th->func;
+                th->func = JS_UNDEFINED;
+                unlink_timer(rt, th);
+                if (!th->has_object)
+                    free_timer(rt, th);
+                call_handler(ctx, func);
+                JS_FreeValue(ctx, func);
+                return 0;
+            }
+            else if (delay < min_delay || min_delay==INFINITE) {
+                min_delay = (uint32_t)delay;
+            }
+        }
+    }
+    if (waitTime) {
+        *waitTime = min_delay;
+    }
     if (list_empty(&ts->os_rw_handlers) && list_empty(&ts->port_list))
         return 0; /* no more events */
 
@@ -4128,7 +4153,10 @@ void js_handle_waitresult(JSContext* ctx, int ret, int osrw_cnt, int msg_cnt) {
     JSOSRWHandler* rh;
     struct list_head* el;
 
-    if (ret >= WAIT_OBJECT_0 && ret < WAIT_OBJECT_0 + osrw_cnt + msg_cnt) {
+    if (ret == WAIT_TIMEOUT) {
+        //wait timeout received.
+        JS_ExecuteTimer(ctx);
+    }else if (ret >= WAIT_OBJECT_0 && ret < WAIT_OBJECT_0 + osrw_cnt + msg_cnt) {
         int idx = 0;
         list_for_each(el, &ts->os_rw_handlers) {
             rh = list_entry(el, JSOSRWHandler, link);

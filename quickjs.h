@@ -1139,7 +1139,7 @@ QJS_DLLPORT JSValue  js_debugger_local_variables(JSContext *ctx, int stack_index
 QJS_API void*    js_debugger_get_object_id(JSValue val);
 
 #ifdef _WIN32
-QJS_API int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length, int* rwsize, int* msgSize);
+QJS_API int js_prepare_waitlist(JSContext* ctx, HANDLE* handles, int length, int* rwsize, int* msgSize, uint32_t*waitTime);
 QJS_API void js_handle_waitresult(JSContext* ctx, int ret, int osrw_cnt, int msg_cnt);
 
 #endif
