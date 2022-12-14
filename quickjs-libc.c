@@ -2077,6 +2077,7 @@ static void js_os_timer_mark(JSRuntime *rt, JSValueConst val,
     JSOSTimer *th = JS_GetOpaque(val, js_os_timer_class_id);
     if (th) {
         JS_MarkValue(rt, th->func, mark_func);
+        JS_MarkValue(rt, th->thisObj, mark_func);
     }
 }
 
@@ -2122,9 +2123,8 @@ static JSValue js_os_clearTimeout(JSContext *ctx, JSValueConst this_val,
     if (!th)
         return JS_EXCEPTION;
     unlink_timer(JS_GetRuntime(ctx), th);
-    //JS_FreeValue(ctx, th->func);
-    JS_FreeValue(ctx, th->thisObj);
-
+    JS_FreeValue(ctx,th->thisObj);
+    th->thisObj = JS_UNDEFINED;
     return JS_UNDEFINED;
 }
 
@@ -2432,15 +2432,18 @@ static int js_os_poll(JSContext *ctx)
             JSOSTimer *th = list_entry(el, JSOSTimer, link);
             delay = th->timeout - cur_time;
             if (delay <= 0) {
-                JSValue func;
+                JSValue func,thisObj;
                 /* the timer expired */
                 func = th->func;
+                thisObj = th->thisObj;
                 th->func = JS_UNDEFINED;
+                th->thisObj = JS_UNDEFINED;
                 unlink_timer(rt, th);
                 if (!th->has_object)
                     free_timer(rt, th);
-                call_handler(ctx, func);
+                call_handler2(ctx, func,thisObj);
                 JS_FreeValue(ctx, func);
+                JS_FreeValue(ctx, thisObj);
                 return 0;
             } else if (delay < min_delay) {
                 min_delay = delay;
