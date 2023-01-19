@@ -54731,7 +54731,6 @@ JSClassID JS_GetClassID(JSValueConst v)
     return p->class_id;
 }
 
-#include "quickjs-debugger.h"
 //========================================================================
 JSDebuggerLocation js_debugger_current_location(JSContext* ctx, const uint8_t* cur_pc) {
     JSDebuggerLocation location;
