@@ -15,7 +15,7 @@ struct js_transport_data {
     int handle;
 } js_transport_data;
 
-static size_t js_transport_read(void *udata, char *buffer, size_t length) {
+static int js_transport_read(void *udata, char *buffer, size_t length) {
     struct js_transport_data* data = (struct js_transport_data *)udata;
     if (data->handle <= 0)
         return -1;
@@ -39,7 +39,7 @@ static size_t js_transport_read(void *udata, char *buffer, size_t length) {
     return ret;
 }
 
-static size_t js_transport_write(void *udata, const char *buffer, size_t length) {
+static int js_transport_write(void *udata, const char *buffer, size_t length) {
     struct js_transport_data* data = (struct js_transport_data *)udata;
     if (data->handle <= 0)
         return -1;
@@ -57,7 +57,7 @@ static size_t js_transport_write(void *udata, const char *buffer, size_t length)
     return ret;
 }
 
-static size_t js_transport_peek(void *udata) {
+static int js_transport_peek(void *udata) {
     struct pollfd fds[1];
     int poll_rc;
 

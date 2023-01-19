@@ -25,9 +25,9 @@ typedef struct JSDebuggerLocation {
 #define JS_DEBUGGER_STEP_OUT 3
 #define JS_DEBUGGER_STEP_CONTINUE 4
 
-typedef size_t(*fun_trans_read)(void* udata, char* buffer, size_t length);
-typedef size_t(*fun_trans_write)(void* udata, const char* buffer, size_t length);
-typedef size_t(*fun_trans_peek)(void* udata);
+typedef int (*fun_trans_read)(void* udata, char* buffer, size_t length);
+typedef int (*fun_trans_write)(void* udata, const char* buffer, size_t length);
+typedef int (*fun_trans_peek)(void* udata);
 typedef void (*fun_trans_close)(JSRuntime* rt, void* udata);
 
 typedef struct JSDebuggerInfo {

@@ -7,12 +7,12 @@
 
 
 struct js_transport_data {
-    int handle;
+    SOCKET handle;
 } js_transport_data;
 
-static size_t js_transport_read(void *udata, char *buffer, size_t length) {
+static int js_transport_read(void *udata, char *buffer, size_t length) {
     struct js_transport_data* data = (struct js_transport_data *)udata;
-    if (data->handle <= 0)
+    if (data->handle == INVALID_SOCKET)
         return -1;
 
     if (length == 0)
@@ -35,9 +35,9 @@ static size_t js_transport_read(void *udata, char *buffer, size_t length) {
     return ret;
 }
 
-static size_t js_transport_write(void *udata, const char *buffer, size_t length) {
+static int js_transport_write(void *udata, const char *buffer, size_t length) {
     struct js_transport_data* data = (struct js_transport_data *)udata;
-    if (data->handle <= 0)
+    if (data->handle == INVALID_SOCKET)
         return -1;
 
     if (length == 0)
@@ -54,12 +54,12 @@ static size_t js_transport_write(void *udata, const char *buffer, size_t length)
     return ret;
 }
 
-static size_t js_transport_peek(void *udata) {
+static int js_transport_peek(void *udata) {
     WSAPOLLFD  fds[1];
     int poll_rc;
 
     struct js_transport_data* data = (struct js_transport_data *)udata;
-    if (data->handle <= 0)
+    if (data->handle == INVALID_SOCKET)
         return -1;
 
     fds[0].fd = data->handle;
@@ -78,17 +78,14 @@ static size_t js_transport_peek(void *udata) {
     return 1;
 }
 
-static void js_transport_close(JSContext* ctx, void *udata) {
-    struct js_transport_data* data = (struct js_transport_data *)udata;
-    if (data->handle <= 0)
+static void js_transport_close(JSRuntime* rt, void* udata) {
+    struct js_transport_data* data = (struct js_transport_data*)udata;
+    if (data->handle == INVALID_SOCKET)
         return;
-
-    close(data->handle);
-	data->handle = 0;
-
+    closesocket(data->handle);
+    data->handle = 0;
     free(udata);
-
-	WSACleanup();
+    WSACleanup();
 }
 
 // todo: fixup asserts to return errors.
@@ -120,21 +117,20 @@ void js_debugger_connect(JSContext *ctx, const char *address) {
 	WSADATA wsaData;
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
     struct sockaddr_in addr = js_debugger_parse_sockaddr(address);
-    int client = socket(AF_INET, SOCK_STREAM, 0);
+    SOCKET client = socket(AF_INET, SOCK_STREAM, 0);
 
 	connect(client, (const struct sockaddr *)&addr, sizeof(addr));
 	    
     struct js_transport_data *data = (struct js_transport_data *)malloc(sizeof(struct js_transport_data));
     data->handle = client;
-
     js_debugger_attach(ctx, js_transport_read, js_transport_write, js_transport_peek, js_transport_close, data);
 }
 
 void js_debugger_wait_connection(JSContext* ctx, const char* address) {
     struct sockaddr_in addr = js_debugger_parse_sockaddr(address); 
 
-    int server = socket(AF_INET, SOCK_STREAM, 0);
-    assert(server >= 0);
+    SOCKET server = socket(AF_INET, SOCK_STREAM, 0);
+    assert(server != INVALID_SOCKET);
 
     int reuseAddress = 1;
     assert(setsockopt(server, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuseAddress, sizeof(reuseAddress)) >= 0);
@@ -145,9 +141,9 @@ void js_debugger_wait_connection(JSContext* ctx, const char* address) {
 
     struct sockaddr_in client_addr;
     int client_addr_size = sizeof(addr);
-    int client = accept(server, (struct sockaddr*)&client_addr, &client_addr_size);
-    close(server);
-    assert(client >= 0);
+    SOCKET client = accept(server, (struct sockaddr*)&client_addr, &client_addr_size);
+    closesocket(server);
+    assert(client != INVALID_SOCKET);
 
     struct js_transport_data* data = (struct js_transport_data*)malloc(sizeof(struct js_transport_data));
     memset(data, 0, sizeof(js_transport_data));
