@@ -1165,7 +1165,7 @@ static JSValue js_std_file_seek(JSContext *ctx, JSValueConst this_val,
 #if defined(__linux__)
     ret = fseeko(f, pos, whence);
 #else
-    ret = fseek(f, pos, whence);
+    ret = fseek(f, (long)pos, whence);
 #endif
     if (ret < 0)
         ret = -errno;
@@ -1229,9 +1229,9 @@ static JSValue js_std_file_read_write(JSContext *ctx, JSValueConst this_val,
     if (pos + len > size)
         return JS_ThrowRangeError(ctx, "read/write array buffer overflow");
     if (magic)
-        ret = fwrite(buf + pos, 1, len, f);
+        ret = fwrite(buf + pos, 1, (long)len, f);
     else
-        ret = fread(buf + pos, 1, len, f);
+        ret = fread(buf + pos, 1, (long)len, f);
     return JS_NewInt64(ctx, ret);
 }
 
@@ -1295,7 +1295,7 @@ static JSValue js_std_file_readAsString(JSContext *ctx, JSValueConst this_val,
         if (JS_ToIndex(ctx, &max_size64, max_size_val))
             return JS_EXCEPTION;
         if (max_size64 < max_size)
-            max_size = max_size64;
+            max_size = (size_t)max_size64;
     }
 
     js_std_dbuf_init(ctx, &dbuf);
@@ -1685,7 +1685,7 @@ static JSValue js_os_seek(JSContext *ctx, JSValueConst this_val,
         return JS_EXCEPTION;
     if (JS_ToInt32(ctx, &whence, argv[2]))
         return JS_EXCEPTION;
-    ret = lseek(fd, pos, whence);
+    ret = lseek(fd, (long)pos, whence);
     if (ret == -1)
         ret = -errno;
     if (is_bigint)
@@ -1715,9 +1715,9 @@ static JSValue js_os_read_write(JSContext *ctx, JSValueConst this_val,
     if (pos + len > size)
         return JS_ThrowRangeError(ctx, "read/write array buffer overflow");
     if (magic)
-        ret = js_get_errno(write(fd, buf + pos, len));
+        ret = js_get_errno(write(fd, buf + pos, (uint32_t)len));
     else
-        ret = js_get_errno(read(fd, buf + pos, len));
+        ret = js_get_errno(read(fd, buf + pos, (uint32_t)len));
     return JS_NewInt64(ctx, ret);
 }
 
@@ -2167,7 +2167,6 @@ void JS_ExecuteTimer(JSContext* ctx) {
     JSRuntime* rt = JS_GetRuntime(ctx);
     JSThreadState* ts = JS_GetRuntimeOpaque(rt);
     int64_t cur_time, delay;
-    JSOSRWHandler* rh;
     struct list_head* el;
 
     /* XXX: handle signals if useful */
@@ -2338,7 +2337,7 @@ static int js_os_poll(JSContext* ctx)
                 return 0;
             }
             else if (delay < min_delay) {
-                min_delay = delay;
+                min_delay = (int)delay;
             }
         }
     }
@@ -2799,7 +2798,7 @@ static JSValue js_os_sleep(JSContext *ctx, JSValueConst this_val,
     {
         if (delay > INT32_MAX)
             delay = INT32_MAX;
-        Sleep(delay);
+        Sleep((DWORD)delay);
         ret = 0;
     }
 #else

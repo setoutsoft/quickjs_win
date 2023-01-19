@@ -98,6 +98,9 @@ project "quickjs"
 		"quickjs-libc.h",
 		"quickjs-opcode.h",
 		"quickjs-jsx.h",
+		"quickjs-debugger.h",
+		"quickjs-debugger.c",
+		"quickjs-debugger-transport-win.c",
 	}
 
 -----------------------------------------------------------------------------------------------------------------------

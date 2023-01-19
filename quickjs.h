@@ -30,6 +30,7 @@
 #include <math.h>
 #include "quickjs-version.h"
 #include "quickjs-api.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1121,20 +1122,6 @@ QJS_API int JS_SetModuleExport(JSContext *ctx, JSModuleDef *m, const char *expor
                        JSValue val);
 QJS_API int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
                            const JSCFunctionListEntry *tab, int len);
-
-#ifdef CONFIG_DEBUGGER
-
-typedef JS_BOOL JSDebuggerCheckLineNoF(JSContext *ctx, JSAtom file_name, uint32_t line_no, const uint8_t *pc);
-
-QJS_DLLPORT void JS_SetBreakpointHandler(JSContext *ctx, JSDebuggerCheckLineNoF* line_hit_handler);
-QJS_DLLPORT void JS_SetDebuggerMode(JSContext *ctx, int onoff);
-
-QJS_DLLPORT uint32_t js_debugger_stack_depth(JSContext *ctx);
-QJS_DLLPORT JSValue  js_debugger_build_backtrace(JSContext *ctx, const uint8_t *cur_pc);
-QJS_DLLPORT JSValue  js_debugger_closure_variables(JSContext *ctx, int stack_index);
-QJS_DLLPORT JSValue  js_debugger_local_variables(JSContext *ctx, int stack_index);
-
-#endif
 
 QJS_API void*    js_debugger_get_object_id(JSValue val);
 
