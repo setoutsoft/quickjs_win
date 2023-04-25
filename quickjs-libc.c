@@ -2652,7 +2652,15 @@ static JSValue js_os_stat(JSContext *ctx, JSValueConst this_val,
     if (!path)
         return JS_EXCEPTION;
 #if defined(_WIN32)
-    res = stat(path, &st);
+    {
+        wchar_t wPath[MAX_PATH] = { 0 };
+        if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wPath, MAX_PATH) > 0) {
+            res = _wstat(wPath, &st);
+        }
+        else {
+            res = stat(path, &st);
+        }
+    }
 #else
     if (is_lstat)
         res = lstat(path, &st);

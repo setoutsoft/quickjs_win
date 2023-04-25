@@ -1101,9 +1101,10 @@ dirent_wcstombs_s(
     int error;
 
 #if defined(_MSC_VER)  &&  _MSC_VER >= 1400
-
+    int nCopy = WideCharToMultiByte(CP_UTF8, 0, wcstr, count, mbstr, sizeInBytes, NULL, NULL);
+    error = 0;
     /* Microsoft Visual Studio 2005 or later */
-    error = wcstombs_s (pReturnValue, mbstr, sizeInBytes, wcstr, count);
+    //error = wcstombs_s (pReturnValue, mbstr, sizeInBytes, wcstr, count);
 
 #else
 
