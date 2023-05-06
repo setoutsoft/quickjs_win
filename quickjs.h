@@ -1131,6 +1131,9 @@ QJS_API void js_handle_waitresult(JSContext* ctx, int ret, int osrw_cnt, int msg
 
 #endif
 
+typedef void (*fun_printer)(const char* buf, size_t len);
+QJS_API void js_set_printer(fun_printer fun);
+
 #undef js_force_inline
 
 #ifdef __cplusplus

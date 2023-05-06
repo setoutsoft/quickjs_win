@@ -3927,25 +3927,87 @@ JSModuleDef *js_init_module_os(JSContext *ctx, const char *module_name)
 }
 
 /**********************************************************/
+static fun_printer s_printer = NULL;
+void js_set_printer(fun_printer fun) {
+    s_printer = fun;
+}
 
 static JSValue js_print(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv)
 {
     int i;
     const char *str;
-    size_t len;
-
-    for(i = 0; i < argc; i++) {
-        if (i != 0)
-            putchar(' ');
-        str = JS_ToCStringLen(ctx, &len, argv[i]);
-        if (!str)
+    if (s_printer) {
+        char printBuf[1024] = { 0 };
+        size_t len,lenAll=0;
+        int    err = 0;
+        const char** ppStrs = (const char **)js_malloc(ctx, sizeof(const char*) * argc);
+        size_t* pLens = (size_t*)js_malloc(ctx, sizeof(size_t) * argc);
+        if (!ppStrs || !pLens) {
+            if (ppStrs) js_free(ctx, ppStrs);
+            if (pLens) js_free(ctx, pLens);
             return JS_EXCEPTION;
-        fwrite(str, 1, len, stdout);
-        JS_FreeCString(ctx, str);
+        }
+        memset(ppStrs, 0, sizeof(const char*) * argc);
+        for (i = 0; i < argc; i++) {
+            str = JS_ToCStringLen(ctx, &len, argv[i]);            
+            if (!str)
+            {
+                err = 1;
+                break;
+            }
+            lenAll += len;
+            ppStrs[i] = str;
+            pLens[i] = len;
+        }
+        if (err == 0) {
+            char* buf = NULL,*p;
+            lenAll += argc - 1;//make for blanks.
+            if (lenAll < 1024) {
+                buf = printBuf;
+            }
+            else {
+                buf = js_malloc(ctx, lenAll + 1);
+            }
+            p = buf;
+            for (i = 0; i < argc; i++) {
+                strncpy(p, ppStrs[i], pLens[i]);
+                p += pLens[i];
+                if (i < argc - 1)
+                    *p = ' ';
+                else
+                    *p = '\0';
+                p++;
+            }
+            s_printer(buf, lenAll);
+            if (lenAll >= 1024) {
+                js_free(ctx, buf);
+            }
+        }
+        for (i = 0; i < argc; i++) {
+            if (!ppStrs[i])
+                break;
+            JS_FreeCString(ctx, ppStrs[i]);
+        }
+        js_free(ctx,ppStrs);
+        js_free(ctx, pLens);
+        return err == 0 ? JS_UNDEFINED : JS_EXCEPTION;
     }
-    putchar('\n');
-    return JS_UNDEFINED;
+    else
+    {
+        size_t len;
+        for (i = 0; i < argc; i++) {
+            if (i != 0)
+                putchar(' ');
+            str = JS_ToCStringLen(ctx, &len, argv[i]);
+            if (!str)
+                return JS_EXCEPTION;
+            fwrite(str, 1, len, stdout);
+            JS_FreeCString(ctx, str);
+        }
+        putchar('\n');
+        return JS_UNDEFINED;
+    }
 }
 
 void js_std_add_helpers(JSContext *ctx, int argc, char **argv)
