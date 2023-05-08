@@ -3318,6 +3318,7 @@ typedef struct {
     JSWorkerMessagePipe *recv_pipe;
     JSWorkerMessagePipe *send_pipe;
     JSWorkerMessageHandler *msg_handler;
+    JSValue opaque;
 } JSWorkerData;
 
 typedef struct {
@@ -3475,13 +3476,23 @@ static void js_worker_finalizer(JSRuntime *rt, JSValue val)
         js_free_message_pipe(worker->recv_pipe);
         js_free_message_pipe(worker->send_pipe);
         js_free_port(rt, worker->msg_handler);
+        JS_FreeValueRT(rt, worker->opaque);
         js_free_rt(rt, worker);
+    }
+}
+static void js_worker_mark(JSRuntime* rt, JSValueConst val,
+    JS_MarkFunc* mark_func)
+{
+    JSWorkerData* th = JS_GetOpaque(val, js_worker_class_id);
+    if (th) {
+        JS_MarkValue(rt, th->opaque, mark_func);
     }
 }
 
 static JSClassDef js_worker_class = {
     "Worker",
     .finalizer = js_worker_finalizer,
+    .gc_mark = js_worker_mark,
 }; 
 
 static void *worker_func(void *opaque)
@@ -3554,7 +3565,7 @@ static JSValue js_worker_ctor_internal(JSContext *ctx, JSValueConst new_target,
         goto fail;
     s->recv_pipe = js_dup_message_pipe(recv_pipe);
     s->send_pipe = js_dup_message_pipe(send_pipe);
-
+    s->opaque = JS_NULL;
     JS_SetOpaque(obj, s);
     return obj;
  fail:
@@ -3779,10 +3790,34 @@ static JSValue js_worker_get_onmessage(JSContext *ctx, JSValueConst this_val)
     }
 }
 
+static JSValue js_worker_set_opaque(JSContext* ctx, JSValueConst this_val,
+    JSValueConst obj)
+{
+    JSRuntime* rt = JS_GetRuntime(ctx);
+    JSThreadState* ts = JS_GetRuntimeOpaque(rt);
+    JSWorkerData* worker = JS_GetOpaque2(ctx, this_val, js_worker_class_id);
+
+    if (!worker)
+        return JS_EXCEPTION;
+
+    JS_FreeValue(ctx, worker->opaque);
+    worker->opaque = JS_DupValue(ctx, obj);
+    return JS_UNDEFINED;
+}
+
+static JSValue js_worker_get_opaque(JSContext* ctx, JSValueConst this_val)
+{
+    JSWorkerData* worker = JS_GetOpaque2(ctx, this_val, js_worker_class_id);
+    if (!worker)
+        return JS_EXCEPTION;
+    return JS_DupValue(ctx, worker->opaque);
+}
+
 static const JSCFunctionListEntry js_worker_proto_funcs[] = {
     JS_CFUNC_DEF("postMessage", 1, js_worker_postMessage ),
     JS_CFUNC_DEF("poll", 0, js_worker_poll),
     JS_CGETSET_DEF("onmessage", js_worker_get_onmessage, js_worker_set_onmessage ),
+    JS_CGETSET_DEF("opaque", js_worker_get_opaque, js_worker_set_opaque),
 };
 
 #endif /* USE_WORKER */
