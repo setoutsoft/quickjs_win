@@ -1352,7 +1352,7 @@ static int http_get_header_line(FILE *f, char *buf, size_t buf_size,
         c = fgetc(f);
         if (c < 0)
             return -1;
-        if ((p - buf) < buf_size - 1)
+        if ((p - buf) < (int)(buf_size - 1))
             *p++ = c;
         if (dbuf)
             dbuf_putc(dbuf, c);
@@ -2282,12 +2282,11 @@ static int handle_posted_message(JSRuntime *rt, JSContext *ctx,
 #endif
 
 #ifdef _WIN32
-static int js_os_poll(JSContext* ctx)
+static int js_os_poll2(JSContext* ctx,int min_delay)
 {
     JSRuntime* rt = JS_GetRuntime(ctx);
     JSThreadState* ts = JS_GetRuntimeOpaque(rt);
-    int ret, min_delay=INFINITE;
-    int64_t cur_time, delay;
+    int ret;
     HANDLE evts[64];
     JSOSRWHandler* rh;
     struct list_head* el;
@@ -2316,8 +2315,8 @@ static int js_os_poll(JSContext* ctx)
         return -1; /* no more events */
 
     if (!list_empty(&ts->os_timers)) {
+        int64_t cur_time, delay,timer_delay=10000;
         cur_time = get_time_ms();
-        min_delay = 10000;
         list_for_each(el, &ts->os_timers) {
             JSOSTimer* th = list_entry(el, JSOSTimer, link);
             delay = th->timeout - cur_time;
@@ -2336,9 +2335,12 @@ static int js_os_poll(JSContext* ctx)
                 JS_FreeValue(ctx, thisObj);
                 return 0;
             }
-            else if (delay < min_delay) {
-                min_delay = (int)delay;
+            else if (delay < timer_delay) {
+                timer_delay = delay;
             }
+        }
+        if (min_delay > (int)timer_delay) {
+            min_delay = (int)timer_delay;
         }
     }
 
@@ -2361,7 +2363,7 @@ static int js_os_poll(JSContext* ctx)
     }
 
     ret = WaitForMultipleObjects(osrw_cnt+ msg_cnt, evts, FALSE, min_delay);
-    if (ret >= WAIT_OBJECT_0 && ret < WAIT_OBJECT_0+ osrw_cnt+ msg_cnt) {
+    if (ret >= (int)WAIT_OBJECT_0 && ret < (int)WAIT_OBJECT_0+ osrw_cnt+ msg_cnt) {
         int idx = 0;
         list_for_each(el, &ts->os_rw_handlers) {
             rh = list_entry(el, JSOSRWHandler, link);
@@ -2391,13 +2393,13 @@ static int js_os_poll(JSContext* ctx)
 done:
     return 0;
 }
+
 #else
-static int js_os_poll(JSContext *ctx)
+static int js_os_poll2(JSContext *ctx, int  min_delay)
 {
     JSRuntime *rt = JS_GetRuntime(ctx);
     JSThreadState *ts = JS_GetRuntimeOpaque(rt);
-    int ret, fd_max, min_delay;
-    int64_t cur_time, delay;
+    int ret, fd_max;
     fd_set rfds, wfds;
     JSOSRWHandler *rh;
     struct list_head *el;
@@ -2425,8 +2427,8 @@ static int js_os_poll(JSContext *ctx)
         return -1; /* no more events */
     
     if (!list_empty(&ts->os_timers)) {
+        int64_t cur_time, delay,timer_delay=10000;
         cur_time = get_time_ms();
-        min_delay = 10000;
         list_for_each(el, &ts->os_timers) {
             JSOSTimer *th = list_entry(el, JSOSTimer, link);
             delay = th->timeout - cur_time;
@@ -2444,10 +2446,12 @@ static int js_os_poll(JSContext *ctx)
                 JS_FreeValue(ctx, func);
                 JS_FreeValue(ctx, thisObj);
                 return 0;
-            } else if (delay < min_delay) {
-                min_delay = delay;
+            } else if (delay < timer_delay) {
+                timer_delay = delay;
             }
         }
+        if (min_delay > (int)timer_delay)
+            min_delay = (int)timer_delay;
         tv.tv_sec = min_delay / 1000;
         tv.tv_usec = (min_delay % 1000) * 1000;
         tvp = &tv;
@@ -2508,6 +2512,9 @@ static int js_os_poll(JSContext *ctx)
     return 0;
 }
 #endif /* !_WIN32 */
+static int js_os_poll(JSContext* ctx) {
+    return js_os_poll2(ctx, INFINITE);
+}
 
 static JSValue make_obj_error(JSContext *ctx,
                               JSValue obj,
@@ -3636,6 +3643,13 @@ static JSValue js_worker_ctor(JSContext *ctx, JSValueConst new_target,
     return JS_EXCEPTION;
 }
 
+static JSValue js_worker_poll(JSContext* ctx, JSValueConst this_val,
+    int argc, JSValueConst* argv)
+{
+    js_os_poll2(ctx, 0);
+    return JS_UNDEFINED;
+}
+
 static JSValue js_worker_postMessage(JSContext *ctx, JSValueConst this_val,
                                      int argc, JSValueConst *argv)
 {
@@ -3767,6 +3781,7 @@ static JSValue js_worker_get_onmessage(JSContext *ctx, JSValueConst this_val)
 
 static const JSCFunctionListEntry js_worker_proto_funcs[] = {
     JS_CFUNC_DEF("postMessage", 1, js_worker_postMessage ),
+    JS_CFUNC_DEF("poll", 0, js_worker_poll),
     JS_CGETSET_DEF("onmessage", js_worker_get_onmessage, js_worker_set_onmessage ),
 };
 
@@ -3932,6 +3947,7 @@ void js_set_printer(fun_printer fun) {
     s_printer = fun;
 }
 
+typedef const char* MYLPCSTR;
 static JSValue js_print(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv)
 {
@@ -3941,14 +3957,14 @@ static JSValue js_print(JSContext *ctx, JSValueConst this_val,
         char printBuf[1024] = { 0 };
         size_t len,lenAll=0;
         int    err = 0;
-        const char** ppStrs = (const char **)js_malloc(ctx, sizeof(const char*) * argc);
+        MYLPCSTR * ppStrs = (MYLPCSTR *)js_malloc(ctx, sizeof(MYLPCSTR) * argc);
         size_t* pLens = (size_t*)js_malloc(ctx, sizeof(size_t) * argc);
         if (!ppStrs || !pLens) {
-            if (ppStrs) js_free(ctx, ppStrs);
+            if (ppStrs) js_free(ctx, (void*)ppStrs);
             if (pLens) js_free(ctx, pLens);
             return JS_EXCEPTION;
         }
-        memset(ppStrs, 0, sizeof(const char*) * argc);
+        memset((void*)ppStrs, 0, sizeof(MYLPCSTR) * argc);
         for (i = 0; i < argc; i++) {
             str = JS_ToCStringLen(ctx, &len, argv[i]);            
             if (!str)
@@ -3989,7 +4005,7 @@ static JSValue js_print(JSContext *ctx, JSValueConst this_val,
                 break;
             JS_FreeCString(ctx, ppStrs[i]);
         }
-        js_free(ctx,ppStrs);
+        js_free(ctx,(void*)ppStrs);
         js_free(ctx, pLens);
         return err == 0 ? JS_UNDEFINED : JS_EXCEPTION;
     }
@@ -4235,7 +4251,7 @@ void js_handle_waitresult(JSContext* ctx, int ret, int osrw_cnt, int msg_cnt) {
     if (ret == WAIT_TIMEOUT) {
         //wait timeout received.
         JS_ExecuteTimer(ctx);
-    }else if (ret >= WAIT_OBJECT_0 && ret < WAIT_OBJECT_0 + osrw_cnt + msg_cnt) {
+    }else if (ret >= (int)WAIT_OBJECT_0 && ret < (int)WAIT_OBJECT_0 + osrw_cnt + msg_cnt) {
         int idx = 0;
         list_for_each(el, &ts->os_rw_handlers) {
             rh = list_entry(el, JSOSRWHandler, link);
