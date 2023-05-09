@@ -4160,9 +4160,15 @@ static void js_dump_obj(JSContext *ctx, FILE *f, JSValueConst val)
     str = JS_ToCString(ctx, val);
     if (str) {
         fprintf(f, "%s\n", str);
+        if (s_printer) {
+            s_printer(str, -1);
+        }
         JS_FreeCString(ctx, str);
     } else {
         fprintf(f, "[exception]\n");
+        if (s_printer) {
+            s_printer("[exception]", -1);
+        }
     }
 }
 
