@@ -2647,32 +2647,35 @@ static int64_t timespec_to_ms(const struct timespec *tv)
 #endif
 
 /* return [obj, errcode] */
-static JSValue js_os_stat(JSContext *ctx, JSValueConst this_val,
-                          int argc, JSValueConst *argv, int is_lstat)
+static JSValue js_os_stat(JSContext* ctx, JSValueConst this_val,
+    int argc, JSValueConst* argv, int is_lstat)
 {
-    const char *path;
+    const char* path;
     int err, res;
-    struct stat st;
     JSValue obj;
 
     path = JS_ToCString(ctx, argv[0]);
     if (!path)
         return JS_EXCEPTION;
 #if defined(_WIN32)
+    struct _stat64 st;
     {
         wchar_t wPath[MAX_PATH] = { 0 };
         if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wPath, MAX_PATH) > 0) {
-            res = _wstat(wPath, &st);
+            res = _wstat64(wPath, &st);
         }
         else {
-            res = stat(path, &st);
+            res = _stat64(path, &st);
         }
     }
 #else
-    if (is_lstat)
-        res = lstat(path, &st);
-    else
-        res = stat(path, &st);
+    struct stat st;
+    {
+        if (is_lstat)
+            res = lstat(path, &st);
+        else
+            res = stat(path, &st);
+}
 #endif
     JS_FreeCString(ctx, path);
     if (res < 0) {
