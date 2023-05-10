@@ -3406,7 +3406,7 @@ static JSWorkerMessagePipe *js_new_message_pipe(void)
     init_list_head(&ps->msg_queue);
     pthread_mutex_init(&ps->mutex, NULL);
 #ifdef _WIN32
-    ps->hSemaphore = CreateSemaphore(NULL, 0, 64, NULL);
+    ps->hSemaphore = CreateSemaphore(NULL, 0, LONG_MAX, NULL);
 #else
     ps->read_fd = pipe_fds[0];
     ps->write_fd = pipe_fds[1];

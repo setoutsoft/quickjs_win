@@ -1049,10 +1049,9 @@ dirent_mbstowcs_s(
     int error;
 
 #if defined(_MSC_VER)  &&  _MSC_VER >= 1400
-
-    /* Microsoft Visual Studio 2005 or later */
-    error = mbstowcs_s (pReturnValue, wcstr, sizeInWords, mbstr, count);
-
+    int nCopy = MultiByteToWideChar(CP_UTF8, 0, mbstr, -1, wcstr, sizeInWords);
+    if (*pReturnValue) *pReturnValue = nCopy;
+    error = nCopy<0?nCopy:0;
 #else
 
     /* Older Visual Studio or non-Microsoft compiler */
