@@ -133,6 +133,7 @@ typedef struct {
     struct list_head link;
     JSWorkerMessagePipe *recv_pipe;
     JSValue on_message_func;
+    JSValue worker;
 } JSWorkerMessageHandler;
 
 typedef struct JSThreadState {
@@ -2213,7 +2214,7 @@ static int handle_posted_message(JSRuntime *rt, JSContext *ctx,
     int ret;
     struct list_head *el;
     JSWorkerMessage *msg;
-    JSValue obj, data_obj, func, retval;
+    JSValue obj, data_obj, func, retval,worker;
     
     pthread_mutex_lock(&ps->mutex);
     if (!list_empty(&ps->msg_queue)) {
@@ -2257,9 +2258,11 @@ static int handle_posted_message(JSRuntime *rt, JSContext *ctx,
         /* 'func' might be destroyed when calling itself (if it frees the
            handler), so must take extra care */
         func = JS_DupValue(ctx, port->on_message_func);
-        retval = JS_Call(ctx, func, JS_UNDEFINED, 1, (JSValueConst *)&obj);
+        worker = JS_DupValue(ctx, port->worker);
+        retval = JS_Call(ctx, func, worker, 1, (JSValueConst *)&obj);
         JS_FreeValue(ctx, obj);
         JS_FreeValue(ctx, func);
+        JS_FreeValue(ctx, worker);
         if (JS_IsException(retval)) {
         fail:
             js_std_dump_error(ctx);
@@ -3467,6 +3470,7 @@ static void js_free_port(JSRuntime *rt, JSWorkerMessageHandler *port)
     if (port) {
         js_free_message_pipe(port->recv_pipe);
         JS_FreeValueRT(rt, port->on_message_func);
+        JS_FreeValueRT(rt, port->worker);
         list_del(&port->link);
         js_free_rt(rt, port);
     }
@@ -3770,11 +3774,13 @@ static JSValue js_worker_set_onmessage(JSContext *ctx, JSValueConst this_val,
                 return JS_EXCEPTION;
             port->recv_pipe = js_dup_message_pipe(worker->recv_pipe);
             port->on_message_func = JS_NULL;
+            port->worker = JS_NULL;
             list_add_tail(&port->link, &ts->port_list);
             worker->msg_handler = port;
         }
         JS_FreeValue(ctx, port->on_message_func);
         port->on_message_func = JS_DupValue(ctx, func);
+        port->worker = JS_DupValue(ctx, this_val);
     }
     return JS_UNDEFINED;
 }
