@@ -1657,7 +1657,15 @@ static JSValue js_os_open(JSContext *ctx, JSValueConst this_val,
     if (!(flags & O_TEXT))
         flags |= O_BINARY;
 #endif
+#ifdef _WIN32
+    {
+        wchar_t wPath[MAX_PATH] = { 0 };
+        MultiByteToWideChar(CP_UTF8, 0, filename, -1, wPath, MAX_PATH);
+        ret = js_get_errno(_wopen(wPath, flags, mode));
+    }
+#else
     ret = js_get_errno(open(filename, flags, mode));
+#endif
     JS_FreeCString(ctx, filename);
     return JS_NewInt32(ctx, ret);
 }
@@ -1847,11 +1855,13 @@ static JSValue js_os_remove(JSContext *ctx, JSValueConst this_val,
         return JS_EXCEPTION;
 #if defined(_WIN32)
     {
-        struct stat st;
-        if (stat(filename, &st) == 0 && S_ISDIR(st.st_mode)) {
-            ret = rmdir(filename);
+        struct _stat st;
+        wchar_t path[MAX_PATH] = { 0 };
+        MultiByteToWideChar(CP_UTF8, 0, filename, -1, path, MAX_PATH);
+        if (_wstat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+            ret = _wrmdir(path);
         } else {
-            ret = unlink(filename);
+            ret = _wunlink(path);
         }
     }
 #else
@@ -1862,12 +1872,12 @@ static JSValue js_os_remove(JSContext *ctx, JSValueConst this_val,
     return JS_NewInt32(ctx, ret);
 }
 
-static JSValue js_os_rename(JSContext *ctx, JSValueConst this_val,
-                            int argc, JSValueConst *argv)
+static JSValue js_os_rename(JSContext* ctx, JSValueConst this_val,
+    int argc, JSValueConst* argv)
 {
-    const char *oldpath, *newpath;
+    const char* oldpath, * newpath;
     int ret;
-    
+
     oldpath = JS_ToCString(ctx, argv[0]);
     if (!oldpath)
         return JS_EXCEPTION;
@@ -1876,7 +1886,16 @@ static JSValue js_os_rename(JSContext *ctx, JSValueConst this_val,
         JS_FreeCString(ctx, oldpath);
         return JS_EXCEPTION;
     }
+#ifdef _WIN32
+    {
+        wchar_t wOld[MAX_PATH] = { 0 }, wNew[MAX_PATH] = { 0 };
+        MultiByteToWideChar(CP_UTF8, 0, oldpath, -1, wOld, MAX_PATH);
+        MultiByteToWideChar(CP_UTF8, 0, newpath, -1, wNew, MAX_PATH);
+        ret = js_get_errno(_wrename(wOld, wNew));
+}
+#else
     ret = js_get_errno(rename(oldpath, newpath));
+#endif
     JS_FreeCString(ctx, oldpath);
     JS_FreeCString(ctx, newpath);
     return JS_NewInt32(ctx, ret);
@@ -2559,6 +2578,18 @@ static JSValue js_os_getcwd(JSContext *ctx, JSValueConst this_val,
     return make_string_error(ctx, buf, err);
 }
 
+int mychdir(
+    char const* _Path
+) {
+#ifdef _WIN32
+    wchar_t path[MAX_PATH] = { 0 };
+    MultiByteToWideChar(CP_UTF8, 0, _Path, -1, path, MAX_PATH);
+    return _wchdir(path);
+#else
+    return chdir(_path);
+#endif
+}
+
 static JSValue js_os_chdir(JSContext *ctx, JSValueConst this_val,
                            int argc, JSValueConst *argv)
 {
@@ -2568,7 +2599,7 @@ static JSValue js_os_chdir(JSContext *ctx, JSValueConst this_val,
     target = JS_ToCString(ctx, argv[0]);
     if (!target)
         return JS_EXCEPTION;
-    err = js_get_errno(chdir(target));
+    err = js_get_errno(mychdir(target));
     JS_FreeCString(ctx, target);
     return JS_NewInt32(ctx, err);
 }
@@ -2649,6 +2680,16 @@ static int64_t timespec_to_ms(const struct timespec *tv)
 }
 #endif
 
+
+int mystat64(
+    char const* _FileName,
+    struct _stat64* _Stat
+) {
+    wchar_t wPath[MAX_PATH] = { 0 };
+    MultiByteToWideChar(CP_UTF8, 0, _FileName, -1, wPath, MAX_PATH);
+    return _wstat64(wPath, _Stat);
+}
+
 /* return [obj, errcode] */
 static JSValue js_os_stat(JSContext* ctx, JSValueConst this_val,
     int argc, JSValueConst* argv, int is_lstat)
@@ -2663,13 +2704,7 @@ static JSValue js_os_stat(JSContext* ctx, JSValueConst this_val,
 #if defined(_WIN32)
     struct _stat64 st;
     {
-        wchar_t wPath[MAX_PATH] = { 0 };
-        if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wPath, MAX_PATH) > 0) {
-            res = _wstat64(wPath, &st);
-        }
-        else {
-            res = _stat64(path, &st);
-        }
+        res = mystat64(path, &st);
     }
 #else
     struct stat st;
