@@ -12231,6 +12231,24 @@ int JS_IsArray(JSContext *ctx, JSValueConst val)
     }
 }
 
+int JS_IsArrayBuffer(JSContext* ctx, JSValueConst obj) {
+    JSObject* p;
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return 0;
+    p = JS_VALUE_GET_OBJ(obj);
+    return p->class_id == JS_CLASS_ARRAY_BUFFER ||
+        p->class_id == JS_CLASS_SHARED_ARRAY_BUFFER;
+}
+
+int JS_IsTypedArrayBuffer(JSContext* ctx, JSValueConst obj) {
+    JSObject* p;
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return 0;
+    p = JS_VALUE_GET_OBJ(obj);
+    return p->class_id >= JS_CLASS_UINT8C_ARRAY &&
+        p->class_id <= JS_CLASS_FLOAT64_ARRAY;
+}
+
 int JS_IsTuple(JSContext *ctx, JSValueConst val) {
   /* isArray and has tag property */
   int ret;

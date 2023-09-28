@@ -782,6 +782,8 @@ QJS_API JSValue JS_GetUserClassName(JSContext *ctx, JSValueConst obj);
 
 QJS_API JSValue JS_NewArray(JSContext *ctx);
 QJS_API int JS_IsArray(JSContext *ctx, JSValueConst val);
+QJS_API int JS_IsArrayBuffer(JSContext* ctx, JSValueConst val);
+QJS_API int JS_IsTypedArrayBuffer(JSContext* ctx, JSValueConst val);
 /* isArray and has 'tag' property */
 QJS_API int     JS_IsTuple(JSContext *ctx, JSValueConst val);
 QJS_API JSValue JS_GetTupleTag(JSContext *ctx, JSValueConst val);
@@ -903,6 +905,7 @@ QJS_API JSValue JS_GetTypedArrayBuffer(JSContext *ctx, JSValueConst obj,
                                size_t *pbyte_offset,
                                size_t *pbyte_length,
                                size_t *pbytes_per_element);
+
 typedef struct {
     void *(*sab_alloc)(void *opaque, size_t size);
     void (*sab_free)(void *opaque, void *ptr);
