@@ -4917,7 +4917,7 @@ static __maybe_unused void JS_DumpShapes(JSRuntime *rt)
 static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID class_id)
 {
     JSObject *p;
-
+    pthread_mutex_lock(&ctx->rt->mutex);
     js_trigger_gc(ctx->rt, sizeof(JSObject));
     p = js_malloc(ctx, sizeof(JSObject));
     if (unlikely(!p))
@@ -4942,6 +4942,7 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
         js_free(ctx, p);
     fail:
         js_free_shape(ctx->rt, sh);
+        pthread_mutex_unlock(&ctx->rt->mutex);
         return JS_EXCEPTION;
     }
 
@@ -5019,6 +5020,7 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     }
     p->header.ref_count = 1;
     add_gc_object(ctx->rt, &p->header, JS_GC_OBJ_TYPE_JS_OBJECT);
+    pthread_mutex_unlock(&ctx->rt->mutex);
     return JS_MKPTR(JS_TAG_OBJECT, p);
 }
 
@@ -5037,6 +5039,7 @@ JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto_val,
     JSShape *sh;
     JSObject *proto;
 
+    pthread_mutex_lock(&ctx->rt->mutex);
     proto = get_proto_obj(proto_val);
     sh = find_hashed_shape_proto(ctx->rt, proto);
     if (likely(sh)) {
@@ -5044,8 +5047,12 @@ JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto_val,
     } else {
         sh = js_new_shape(ctx, proto);
         if (!sh)
+        {
+            pthread_mutex_unlock(&ctx->rt->mutex);
             return JS_EXCEPTION;
+        }
     }
+    pthread_mutex_unlock(&ctx->rt->mutex);
     return JS_NewObjectFromShape(ctx, sh, class_id);
 }
 
@@ -5768,6 +5775,11 @@ static void __JS_FreeValue(JSContext *ctx, JSValue v)
 
 void JS_FreeValue(JSContext* ctx, JSValue v)
 {
+    if (ctx)
+    {
+        JS_FreeValueRT(ctx->rt, v);
+        return;
+    }
     if (JS_VALUE_HAS_REF_COUNT(v)) {
         JSRefCountHeader* p = (JSRefCountHeader*)JS_VALUE_GET_PTR(v);
         if (--p->ref_count <= 0) {
@@ -5778,15 +5790,20 @@ void JS_FreeValue(JSContext* ctx, JSValue v)
 void JS_FreeValueRT(JSRuntime* rt, JSValue v)
 {
     if (JS_VALUE_HAS_REF_COUNT(v)) {
+        pthread_mutex_lock(&rt->mutex);
         JSRefCountHeader* p = (JSRefCountHeader*)JS_VALUE_GET_PTR(v);
         if (--p->ref_count <= 0) {
             __JS_FreeValueRT(rt, v);
         }
+        pthread_mutex_unlock(&rt->mutex);
     }
 }
 
 JSValue JS_DupValue(JSContext* ctx, JSValueConst v)
 {
+    if (ctx) {
+        return JS_DupValueRT(ctx->rt, v);
+    }
     if (JS_VALUE_HAS_REF_COUNT(v)) {
         JSRefCountHeader* p = (JSRefCountHeader*)JS_VALUE_GET_PTR(v);
         p->ref_count++;
@@ -5797,8 +5814,10 @@ JSValue JS_DupValue(JSContext* ctx, JSValueConst v)
 JSValue JS_DupValueRT(JSRuntime* rt, JSValueConst v)
 {
     if (JS_VALUE_HAS_REF_COUNT(v)) {
+        pthread_mutex_lock(&rt->mutex);
         JSRefCountHeader* p = (JSRefCountHeader*)JS_VALUE_GET_PTR(v);
         p->ref_count++;
+        pthread_mutex_unlock(&rt->mutex);
     }
     return (JSValue)v;
 }
